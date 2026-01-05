@@ -40,7 +40,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/drivly/neo4j.do"
+    "url": "https://github.com/dot-do/neo4j.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dot-do/neo4j/issues"
   },
   "homepage": "https://neo4j.do",
   "engines": {

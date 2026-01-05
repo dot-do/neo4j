@@ -2,7 +2,7 @@
 
 A Neo4j-compatible graph database running on Cloudflare Workers with D1 (SQLite) storage.
 
-[![CI](https://github.com/drivly/neo4j.do/actions/workflows/ci.yml/badge.svg)](https://github.com/drivly/neo4j.do/actions/workflows/ci.yml)
+[![CI](https://github.com/dot-do/neo4j/actions/workflows/ci.yml/badge.svg)](https://github.com/dot-do/neo4j/actions/workflows/ci.yml)
 [![npm version](https://badge.fury.io/js/neo4j.do.svg)](https://www.npmjs.com/package/neo4j.do)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -283,6 +283,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Links
 
 - [Documentation](https://neo4j.do)
-- [GitHub](https://github.com/drivly/neo4j.do)
+- [GitHub](https://github.com/dot-do/neo4j)
 - [npm](https://www.npmjs.com/package/neo4j.do)
 - [Neo4j Cypher Manual](https://neo4j.com/docs/cypher-manual/current/)
