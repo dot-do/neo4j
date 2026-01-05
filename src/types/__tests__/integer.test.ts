@@ -44,9 +44,9 @@ describe('Integer', () => {
     })
 
     it('creates Integer from BigInt', () => {
-      const i = int(BigInt(9007199254740993))
+      const i = int(9007199254740993n)
       expect(i).toBeInstanceOf(Integer)
-      expect(i.toBigInt()).toBe(BigInt(9007199254740993))
+      expect(i.toBigInt()).toBe(9007199254740993n)
     })
 
     it('creates Integer from object with low/high', () => {
@@ -672,13 +672,13 @@ describe('Integer', () => {
 
       it('handles large positive numbers without overflow', () => {
         const large = Integer.MAX_VALUE.subtract(int(100))
-        const [result, overflow] = large.addWithOverflow(int(50))
+        const [_result, overflow] = large.addWithOverflow(int(50))
         expect(overflow).toBe(false)
       })
 
       it('handles large negative numbers without overflow', () => {
         const large = Integer.MIN_VALUE.add(int(100))
-        const [result, overflow] = large.addWithOverflow(int(-50))
+        const [_result, overflow] = large.addWithOverflow(int(-50))
         expect(overflow).toBe(false)
       })
     })
@@ -706,12 +706,12 @@ describe('Integer', () => {
     describe('multiplyWithOverflow - returns overflow status', () => {
       it('detects overflow on large positive multiplication', () => {
         const large = Integer.fromString('4611686018427387904') // 2^62
-        const [result, overflow] = large.multiplyWithOverflow(int(4))
+        const [_result, overflow] = large.multiplyWithOverflow(int(4))
         expect(overflow).toBe(true)
       })
 
       it('detects overflow on MIN_VALUE * -1', () => {
-        const [result, overflow] = Integer.MIN_VALUE.multiplyWithOverflow(Integer.NEG_ONE)
+        const [_result, overflow] = Integer.MIN_VALUE.multiplyWithOverflow(Integer.NEG_ONE)
         expect(overflow).toBe(true)
       })
 

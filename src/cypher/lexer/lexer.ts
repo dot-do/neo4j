@@ -409,7 +409,7 @@ export class Lexer {
   /**
    * Parse a single-line comment (// ...)
    */
-  private singleLineComment(startLine: number, startColumn: number): Token | null {
+  private singleLineComment(_startLine: number, _startColumn: number): Token | null {
     // Consume until end of line
     while (!this.isAtEnd() && this.peek() !== '\n') {
       this.advance()

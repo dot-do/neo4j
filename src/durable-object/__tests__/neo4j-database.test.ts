@@ -200,7 +200,7 @@ interface SqlStorageCursor extends Iterable<unknown> {
   rowsWritten: number
 }
 
-interface RawRowIterator extends Iterable<unknown[]> {}
+type RawRowIterator = Iterable<unknown[]>
 
 /**
  * Create a mock Durable Object state for testing

@@ -3,7 +3,7 @@
  * This is an internal module used by the driver, session, and transaction
  */
 
-import type { AuthToken, HttpConfig } from './types'
+import type { AuthToken } from './types'
 import { createErrorFromResponse, NetworkError, TimeoutError } from './errors'
 
 /**
@@ -184,9 +184,10 @@ export class HttpClient {
    */
   private buildAuthHeader(auth: AuthToken): string {
     switch (auth.scheme) {
-      case 'basic':
+      case 'basic': {
         const credentials = btoa(`${auth.principal}:${auth.credentials}`)
         return `Basic ${credentials}`
+      }
       case 'bearer':
         return `Bearer ${auth.credentials}`
       case 'kerberos':

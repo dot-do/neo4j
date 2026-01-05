@@ -10,7 +10,6 @@ import {
   DriverClosedError,
   SessionClosedError,
   NetworkError,
-  ServerError,
 } from './errors'
 import type {
   AuthToken,

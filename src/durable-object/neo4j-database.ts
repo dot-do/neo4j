@@ -225,7 +225,7 @@ export class Neo4jDatabase {
   /**
    * Run a Cypher query
    */
-  async runCypher(query: string, parameters?: Record<string, unknown>): Promise<QueryResult> {
+  async runCypher(_query: string, _parameters?: Record<string, unknown>): Promise<QueryResult> {
     await this.initialize()
 
     // For now, return a basic result structure

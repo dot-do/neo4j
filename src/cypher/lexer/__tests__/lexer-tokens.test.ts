@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tokenize, Token, TokenType, KEYWORDS } from '../index'
+import { tokenize, KEYWORDS } from '../index'
 
 describe('Lexer Token Types', () => {
   describe('Token Type Definitions', () => {

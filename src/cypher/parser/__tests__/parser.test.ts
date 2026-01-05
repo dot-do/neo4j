@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { Parser, ParserError, parse } from '../index'
+import { ParserError, parse } from '../index'
 import {
-  Query,
   MatchClause,
   ReturnClause,
   DeleteClause,

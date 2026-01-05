@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { driver, auth } from '../../index'
 import type { Driver } from '../driver'
-import type { AuthToken, Config } from '../../types'
+import type { Config } from '../../types'
 
 describe('neo4j.driver()', () => {
   describe('factory function', () => {
@@ -302,7 +302,7 @@ describe('Driver.close()', () => {
     const session2 = d.session()
 
     // Start a transaction to simulate active work
-    const tx = await session1.beginTransaction()
+    const _tx = await session1.beginTransaction()
 
     // Close should wait for cleanup
     const closePromise = d.close()
@@ -363,13 +363,13 @@ describe('Session Management Lifecycle', () => {
   it('should track session creation', () => {
     expect(d.activeSessionCount).toBe(0)
 
-    const session = d.session()
+    const _session = d.session()
 
     expect(d.activeSessionCount).toBe(1)
   })
 
   it('should track multiple sessions', () => {
-    const sessions = [d.session(), d.session(), d.session()]
+    const _sessions = [d.session(), d.session(), d.session()]
 
     expect(d.activeSessionCount).toBe(3)
   })

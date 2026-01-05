@@ -265,7 +265,7 @@ export class Driver {
   /**
    * Verify connectivity to the database
    */
-  async verifyConnectivity(options?: VerifyConnectivityOptions): Promise<void> {
+  async verifyConnectivity(_options?: VerifyConnectivityOptions): Promise<void> {
     if (this._state !== 'open') {
       throw new Error('Driver is closed')
     }

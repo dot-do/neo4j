@@ -1,9 +1,8 @@
 import { Token } from '../lexer/token'
 import { TokenType } from '../lexer/tokens'
 import { Lexer } from '../lexer/lexer'
-import {
+import type {
   Query,
-  Clause,
   MatchClause,
   ReturnClause,
   ReturnItem,
@@ -16,25 +15,16 @@ import {
   UnionClause,
   YieldItem,
   Pattern,
-  PatternElement,
   NodePattern,
   RelationshipPattern,
   Expression,
   Variable,
   PropertyAccess,
-  IntegerLiteral,
-  FloatLiteral,
-  StringLiteral,
-  BooleanLiteral,
-  NullLiteral,
-  BinaryExpression,
   BinaryOperator,
-  UnaryExpression,
   MapLiteral,
   MapEntry,
   ListExpression,
   FunctionCall,
-  Parameter,
   SetClause,
   SetItem,
   PropertySetItem,

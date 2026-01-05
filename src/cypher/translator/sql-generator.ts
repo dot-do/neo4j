@@ -6,15 +6,12 @@
 
 import type {
   Query,
-  Clause,
   MatchClause,
   ReturnClause,
   CreateClause,
   MergeClause,
   DeleteClause,
   SetClause,
-  Pattern,
-  PatternElement,
   NodePattern,
   RelationshipPattern,
   Expression,
@@ -23,7 +20,6 @@ import type {
   FunctionCall,
   BinaryExpression,
   UnaryExpression,
-  MapLiteral,
   IntegerLiteral,
   FloatLiteral,
   StringLiteral,
@@ -31,7 +27,6 @@ import type {
   Parameter,
   ReturnItem,
   OrderByItem,
-  SetItem,
   PropertySetItem,
   LabelSetItem,
 } from '../ast'
@@ -625,8 +620,8 @@ WHERE path_cte.depth >= ${minHops}${endLabelCondition ? ` AND ${endLabelConditio
     const node = elements[0] as NodePattern
 
     if (node) {
-      const labels = JSON.stringify(node.labels)
-      const properties = node.properties
+      const labelsJson = JSON.stringify(node.labels)
+      const propertiesJson = node.properties
         ? JSON.stringify(
             Object.fromEntries(node.properties.entries.map((e) => [e.key, this.getLiteralValue(e.value)]))
           )
@@ -649,6 +644,10 @@ WHERE path_cte.depth >= ${minHops}${endLabelCondition ? ` AND ${endLabelConditio
       }
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+
+      // Push labels and properties for the INSERT
+      this.params.push(labelsJson)
+      this.params.push(propertiesJson)
 
       // Use INSERT with ON CONFLICT or INSERT WHERE NOT EXISTS
       return `INSERT INTO nodes (labels, properties)

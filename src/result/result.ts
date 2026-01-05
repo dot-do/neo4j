@@ -13,7 +13,7 @@ import { ResultSummary, ResultSummaryMetadata } from './result-summary'
 /**
  * Observer interface for subscribing to result events
  */
-export interface ResultObserver<T = any> {
+export interface ResultObserver {
   onKeys?: (keys: string[]) => void
   onNext?: (record: Record) => void
   onCompleted?: (summary: ResultSummary) => void
@@ -44,7 +44,7 @@ type ResultState = 'pending' | 'streaming' | 'completed' | 'error'
  * - Using records property: `const records = await result.records`
  * - Using subscribe(): `result.subscribe({ onNext: (record) => ... })`
  */
-export class Result<T extends Record<string, any> = Record<string, any>> implements AsyncIterable<Record> {
+export class Result implements AsyncIterable<Record> {
   private _keys: string[] | null = null
   private _records: Record[] = []
   private _summary: ResultSummary | null = null

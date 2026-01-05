@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { Result, ResultObserver } from '../result'
 import { Record } from '../record'
 import { ResultSummary } from '../result-summary'
