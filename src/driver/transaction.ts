@@ -3,20 +3,21 @@
  * Compatible with neo4j-driver npm package
  */
 
-import { Result, Record } from '../result'
-import type { RecordShape, ResultSummary, TransactionConfig } from '../types'
+import { Result, Record as Neo4jRecord } from '../result'
+import { ResultSummary as ResultSummaryImpl } from '../result/result-summary'
+import type { TransactionConfig } from '../types'
 
 export type TransactionState = 'open' | 'committed' | 'rolled_back' | 'failed'
+
+type QueryParameters = { [key: string]: unknown }
+type QueryResultData = { keys: string[]; records: unknown[][]; summary: ResultSummaryImpl }
 
 /**
  * Base Transaction interface for managed transactions
  * This provides a subset of Transaction methods for use in executeRead/executeWrite
  */
 export interface ManagedTransaction {
-  run<T extends RecordShape = RecordShape>(
-    query: string,
-    parameters?: Record<string, unknown>
-  ): Result<T>
+  run(query: string, parameters?: QueryParameters): Result
 }
 
 /**
@@ -30,8 +31,8 @@ export class Transaction implements ManagedTransaction {
   private _lastBookmark: string | null = null
   private readonly _executeQuery: (
     query: string,
-    parameters?: Record<string, unknown>
-  ) => Promise<{ keys: string[]; records: unknown[][]; summary: ResultSummary }>
+    parameters?: QueryParameters
+  ) => Promise<QueryResultData>
   private readonly _commitFn: () => Promise<string | null>
   private readonly _rollbackFn: () => Promise<void>
 
@@ -41,8 +42,8 @@ export class Transaction implements ManagedTransaction {
     config: TransactionConfig,
     executeQuery: (
       query: string,
-      parameters?: Record<string, unknown>
-    ) => Promise<{ keys: string[]; records: unknown[][]; summary: ResultSummary }>,
+      parameters?: QueryParameters
+    ) => Promise<QueryResultData>,
     commitFn: () => Promise<string | null>,
     rollbackFn: () => Promise<void>
   ) {
@@ -57,26 +58,23 @@ export class Transaction implements ManagedTransaction {
   /**
    * Run a Cypher query within this transaction
    */
-  run<T extends RecordShape = RecordShape>(
-    query: string,
-    parameters?: Record<string, unknown>
-  ): Result<T> {
+  run(query: string, parameters?: QueryParameters): Result {
     if (this._state !== 'open') {
-      const result = new Result<T>()
+      const result = new Result()
       result._setError(
         new Error(`Cannot run query on transaction with state "${this._state}"`)
       )
       return result
     }
 
-    const result = new Result<T>()
+    const result = new Result()
 
     // Execute query asynchronously
     this._executeQuery(query, parameters)
       .then(({ keys, records, summary }) => {
         result._setKeys(keys)
         for (const values of records) {
-          result._pushRecord(new Record<T>(keys, values))
+          result._pushRecord(new Neo4jRecord(keys, values))
         }
         result._setSummary(summary)
       })

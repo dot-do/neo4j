@@ -115,18 +115,18 @@ export interface ResultSummary {
   database: { name: string }
 }
 
-// Record type
+// Record type - using Neo4jRecord to avoid conflict with built-in Record type
 export interface RecordShape {
   [key: string]: unknown
 }
 
-export interface Record<T extends RecordShape = RecordShape> {
+export interface Neo4jRecord<T extends RecordShape = RecordShape> {
   keys: string[]
   length: number
   get<K extends keyof T>(key: K): T[K]
   get(key: string | number): unknown
   toObject(): T
-  forEach(visitor: (value: unknown, key: string, record: Record<T>) => void): void
-  map<R>(fn: (value: unknown, key: string, record: Record<T>) => R): R[]
+  forEach(visitor: (value: unknown, key: string, record: Neo4jRecord<T>) => void): void
+  map<R>(fn: (value: unknown, key: string, record: Neo4jRecord<T>) => R): R[]
   has(key: string): boolean
 }
