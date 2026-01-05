@@ -8,7 +8,6 @@
 import { parse, ParserError } from '../cypher/parser'
 import { LexerError } from '../cypher/lexer'
 import type {
-  Query,
   Clause,
   MatchClause,
   CreateClause,
@@ -560,8 +559,6 @@ export class GraphDO {
     }
 
     // Process pattern elements
-    let lastNodeVar: string | undefined
-
     for (let i = 0; i < pattern.elements.length; i++) {
       const element = pattern.elements[i]
 
@@ -572,7 +569,6 @@ export class GraphDO {
 
         if (nodePattern.variable) {
           context.variables.set(nodePattern.variable, { type: 'node', data: node })
-          lastNodeVar = nodePattern.variable
         }
       } else if (element.type === 'RelationshipPattern') {
         const relPattern = element as RelationshipPattern
@@ -1000,7 +996,7 @@ export class GraphDO {
       params.push(...pattern.types)
     }
 
-    let result = context.sql.exec(sql, ...params).toArray() as RelationshipRecord[]
+    const result = context.sql.exec(sql, ...params).toArray() as RelationshipRecord[]
 
     // Include transaction relationships
     if (context.transaction) {

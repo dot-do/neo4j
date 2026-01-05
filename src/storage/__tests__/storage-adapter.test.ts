@@ -20,7 +20,7 @@ import {
   TransactionHandle,
   QueryResult,
 } from '../storage-adapter'
-import type { Node, Relationship } from '../types'
+import type { Node as _Node, Relationship as _Relationship } from '../types'
 
 // Mock D1 database for testing
 interface MockD1Database {

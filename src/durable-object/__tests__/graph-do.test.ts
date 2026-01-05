@@ -191,7 +191,7 @@ type RawRowIterator = Iterable<unknown[]>
  */
 function createMockState(): DurableObjectState {
   const sqlStorage = new MockSqlStorage()
-  let blockConcurrencyCallback: (() => Promise<void>) | null = null
+  let _blockConcurrencyCallback: (() => Promise<void>) | null = null
 
   return {
     id: {
@@ -218,7 +218,7 @@ function createMockState(): DurableObjectState {
     } as unknown as DurableObjectStorage,
     waitUntil: vi.fn(),
     blockConcurrencyWhile: vi.fn((fn: () => Promise<void>) => {
-      blockConcurrencyCallback = fn
+      _blockConcurrencyCallback = fn
       return fn()
     }),
     abort: vi.fn(),

@@ -195,7 +195,7 @@ function parseCypherQuery(cypher: string, params?: Record<string, unknown>): {
   const createMatch = cypher.match(/CREATE\s*\(\s*(\w+):(\w+)\s*(\{[^}]*\})?\s*\)/i)
   if (createMatch) {
     const label = createMatch[2]
-    let properties: Record<string, unknown> = {}
+    const properties: Record<string, unknown> = {}
 
     if (createMatch[3]) {
       // Parse inline properties like {name: 'Alice'}

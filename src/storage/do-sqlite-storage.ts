@@ -320,7 +320,7 @@ export class DOSqliteStorage implements IGraphStorage {
   }
 
   async findPattern(options: PatternOptions): Promise<PatternResult[]> {
-    const sql = this.state.storage.sql
+    const _sql = this.state.storage.sql
     const results: PatternResult[] = []
 
     // Case 1: Simple node pattern with labels only

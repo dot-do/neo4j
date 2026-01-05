@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { DOSqliteStorage } from '../do-sqlite-storage'
-import type { Node, Relationship } from '../types'
+import type { Node as _Node, Relationship as _Relationship } from '../types'
 
 /**
  * Mock SQL query result interface matching Cloudflare DO SQL API
@@ -880,11 +880,7 @@ describe('DOSqliteStorage', () => {
     it('should rollback on error during transaction', async () => {
       await storage.initialize()
       const transactionSyncSpy = vi.fn((callback) => {
-        try {
-          return callback()
-        } catch (e) {
-          throw e
-        }
+        return callback()
       })
       ;(state.storage as unknown as { transactionSync: typeof transactionSyncSpy }).transactionSync =
         transactionSyncSpy
