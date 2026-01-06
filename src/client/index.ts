@@ -46,6 +46,16 @@ export {
 // Low-level HTTP client (for advanced use cases)
 export { HttpClient, type HttpClientConfig, type RequestOptions } from './http-client'
 
+// HTTP Driver (alternative simplified interface)
+export {
+  Neo4jHttpDriver,
+  HttpSession as DriverHttpSession,
+  type HttpDriverConfig,
+  type HttpDriverAuth,
+  type DriverQueryResult,
+  type DriverSessionConfig,
+} from './http-driver'
+
 // Error classes
 export {
   HttpDriverError,

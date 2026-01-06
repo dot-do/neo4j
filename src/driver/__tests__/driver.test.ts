@@ -473,3 +473,104 @@ describe('Error Handling for Closed Drivers', () => {
     })).rejects.toThrow(/closed/)
   })
 })
+
+// ============================================================================
+// TDD Tests for RxSession Factory Method
+// ============================================================================
+
+describe('Driver.rxSession()', () => {
+  let d: Driver
+
+  beforeEach(() => {
+    d = driver('neo4j://localhost')
+  })
+
+  afterEach(async () => {
+    if (d.isOpen) {
+      await d.close()
+    }
+  })
+
+  it('should create an RxSession with default config', () => {
+    const rxSession = d.rxSession()
+    expect(rxSession).toBeDefined()
+    expect(rxSession.database).toBe('neo4j')
+    expect(rxSession.defaultAccessMode).toBe('WRITE')
+  })
+
+  it('should create an RxSession with database specified', () => {
+    const rxSession = d.rxSession({ database: 'mydb' })
+    expect(rxSession).toBeDefined()
+    expect(rxSession.database).toBe('mydb')
+  })
+
+  it('should create an RxSession with access mode', () => {
+    const rxSession = d.rxSession({ defaultAccessMode: 'READ' })
+    expect(rxSession).toBeDefined()
+    expect(rxSession.defaultAccessMode).toBe('READ')
+  })
+
+  it('should create an RxSession with bookmarks', () => {
+    const rxSession = d.rxSession({ bookmarks: ['bookmark1', 'bookmark2'] })
+    expect(rxSession).toBeDefined()
+    expect(rxSession.lastBookmarks()).toEqual(['bookmark1', 'bookmark2'])
+  })
+
+  it('should create an RxSession with fetch size', () => {
+    const rxSession = d.rxSession({ fetchSize: 500 })
+    expect(rxSession).toBeDefined()
+    expect(rxSession.fetchSize).toBe(500)
+  })
+
+  it('should throw when creating RxSession on closed driver', async () => {
+    await d.close()
+    expect(() => d.rxSession()).toThrow('Cannot create session on closed driver')
+  })
+
+  it('should have run method that returns RxResult', () => {
+    const rxSession = d.rxSession()
+    const result = rxSession.run('RETURN 1')
+    expect(result).toBeDefined()
+    expect(typeof result.keys).toBe('function')
+    expect(typeof result.records).toBe('function')
+    expect(typeof result.consume).toBe('function')
+  })
+
+  it('should have beginTransaction method that returns Observable', () => {
+    const rxSession = d.rxSession()
+    const txObservable = rxSession.beginTransaction()
+    expect(txObservable).toBeDefined()
+    expect(typeof txObservable.subscribe).toBe('function')
+  })
+
+  it('should have executeRead method', () => {
+    const rxSession = d.rxSession()
+    expect(typeof rxSession.executeRead).toBe('function')
+  })
+
+  it('should have executeWrite method', () => {
+    const rxSession = d.rxSession()
+    expect(typeof rxSession.executeWrite).toBe('function')
+  })
+
+  it('should have close method that returns Observable', () => {
+    const rxSession = d.rxSession()
+    const closeObservable = rxSession.close()
+    expect(closeObservable).toBeDefined()
+    expect(typeof closeObservable.subscribe).toBe('function')
+  })
+
+  it('should track closed state after close', async () => {
+    const rxSession = d.rxSession()
+    expect(rxSession.closed).toBe(false)
+
+    await new Promise<void>((resolve) => {
+      rxSession.close().subscribe({
+        complete: () => {
+          expect(rxSession.closed).toBe(true)
+          resolve()
+        },
+      })
+    })
+  })
+})

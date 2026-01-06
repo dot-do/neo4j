@@ -40,6 +40,7 @@ export interface QueryStatisticsInput {
 
 /**
  * QueryStatistics represents the statistics of query execution.
+ * API compatible with neo4j-driver QueryStatistics.
  */
 export class QueryStatistics {
   private readonly _stats: Stats
@@ -88,6 +89,83 @@ export class QueryStatistics {
    */
   systemUpdates(): number {
     return this._systemUpdates
+  }
+
+  /**
+   * Returns the number of nodes created.
+   */
+  nodesCreated(): number {
+    return this._stats.nodesCreated
+  }
+
+  /**
+   * Returns the number of nodes deleted.
+   */
+  nodesDeleted(): number {
+    return this._stats.nodesDeleted
+  }
+
+  /**
+   * Returns the number of relationships created.
+   */
+  relationshipsCreated(): number {
+    return this._stats.relationshipsCreated
+  }
+
+  /**
+   * Returns the number of relationships deleted.
+   */
+  relationshipsDeleted(): number {
+    return this._stats.relationshipsDeleted
+  }
+
+  /**
+   * Returns the number of properties set.
+   */
+  propertiesSet(): number {
+    return this._stats.propertiesSet
+  }
+
+  /**
+   * Returns the number of labels added.
+   */
+  labelsAdded(): number {
+    return this._stats.labelsAdded
+  }
+
+  /**
+   * Returns the number of labels removed.
+   */
+  labelsRemoved(): number {
+    return this._stats.labelsRemoved
+  }
+
+  /**
+   * Returns the number of indexes added.
+   */
+  indexesAdded(): number {
+    return this._stats.indexesAdded
+  }
+
+  /**
+   * Returns the number of indexes removed.
+   */
+  indexesRemoved(): number {
+    return this._stats.indexesRemoved
+  }
+
+  /**
+   * Returns the number of constraints added.
+   */
+  constraintsAdded(): number {
+    return this._stats.constraintsAdded
+  }
+
+  /**
+   * Returns the number of constraints removed.
+   */
+  constraintsRemoved(): number {
+    return this._stats.constraintsRemoved
   }
 }
 

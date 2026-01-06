@@ -3,6 +3,19 @@
  *
  * This schema stores graph data (nodes and relationships) in SQLite,
  * compatible with Cloudflare D1 and Durable Objects.
+ *
+ * Schema Overview:
+ * - nodes: Stores graph nodes with labels (JSON array) and properties (JSON object)
+ * - relationships: Stores edges between nodes with type and properties
+ * - schema_version: Tracks applied migrations for schema versioning
+ *
+ * Index Strategy:
+ * - idx_nodes_labels: Speeds up label-based node lookups (common in Cypher MATCH)
+ * - idx_relationships_start: Speeds up outgoing relationship traversal
+ * - idx_relationships_end: Speeds up incoming relationship traversal
+ * - idx_relationships_type: Speeds up relationship type filtering
+ * - idx_relationships_start_type: Composite index for typed outgoing traversal
+ * - idx_relationships_end_type: Composite index for typed incoming traversal
  */
 
 /**
@@ -48,7 +61,16 @@ export const SCHEMA_SQL = {
   `,
 
   /**
+   * Create index on node labels for label-based lookups
+   * Used by: findNodesByLabel, MATCH (n:Label) queries
+   */
+  createLabelsIndex: `
+    CREATE INDEX IF NOT EXISTS idx_nodes_labels ON nodes(labels);
+  `,
+
+  /**
    * Create index on relationship start_node_id for efficient traversal
+   * Used by: getOutgoingRelationships, MATCH (n)-[r]->() queries
    */
   createStartNodeIndex: `
     CREATE INDEX IF NOT EXISTS idx_relationships_start ON relationships(start_node_id);
@@ -56,6 +78,7 @@ export const SCHEMA_SQL = {
 
   /**
    * Create index on relationship end_node_id for efficient traversal
+   * Used by: getIncomingRelationships, MATCH ()-[r]->(n) queries
    */
   createEndNodeIndex: `
     CREATE INDEX IF NOT EXISTS idx_relationships_end ON relationships(end_node_id);
@@ -63,17 +86,38 @@ export const SCHEMA_SQL = {
 
   /**
    * Create index on relationship type for type-based queries
+   * Used by: findRelationshipsByType, MATCH ()-[r:TYPE]->() queries
    */
   createTypeIndex: `
     CREATE INDEX IF NOT EXISTS idx_relationships_type ON relationships(type);
   `,
 
   /**
+   * Create composite index for typed outgoing traversal
+   * Optimizes: MATCH (n)-[r:TYPE]->() - common graph traversal pattern
+   */
+  createStartTypeIndex: `
+    CREATE INDEX IF NOT EXISTS idx_relationships_start_type ON relationships(start_node_id, type);
+  `,
+
+  /**
+   * Create composite index for typed incoming traversal
+   * Optimizes: MATCH ()-[r:TYPE]->(n) - common graph traversal pattern
+   */
+  createEndTypeIndex: `
+    CREATE INDEX IF NOT EXISTS idx_relationships_end_type ON relationships(end_node_id, type);
+  `,
+
+  /**
    * Create schema_version table for migration tracking
+   * - version: Migration version number (primary key)
+   * - description: Human-readable description of the migration
+   * - applied_at: Timestamp when migration was applied
    */
   createSchemaVersionTable: `
     CREATE TABLE IF NOT EXISTS schema_version (
       version INTEGER PRIMARY KEY,
+      description TEXT,
       applied_at TEXT DEFAULT (datetime('now'))
     );
   `,
@@ -86,15 +130,32 @@ export const CURRENT_SCHEMA_VERSION = 1
 
 /**
  * Returns all SQL statements needed to initialize the database schema
- * in the correct order
+ * in the correct order.
+ *
+ * Order is important:
+ * 1. Create tables first (nodes before relationships due to FK constraints)
+ * 2. Create indexes after tables exist
+ * 3. Create schema_version table last (for migration tracking)
  */
 export function getSchemaInitStatements(): string[] {
   return [
+    // Tables (order matters for foreign key references)
     SCHEMA_SQL.createNodesTable,
     SCHEMA_SQL.createRelationshipsTable,
+
+    // Node indexes
+    SCHEMA_SQL.createLabelsIndex,
+
+    // Relationship indexes (single column)
     SCHEMA_SQL.createStartNodeIndex,
     SCHEMA_SQL.createEndNodeIndex,
     SCHEMA_SQL.createTypeIndex,
+
+    // Relationship indexes (composite for common traversal patterns)
+    SCHEMA_SQL.createStartTypeIndex,
+    SCHEMA_SQL.createEndTypeIndex,
+
+    // Migration tracking
     SCHEMA_SQL.createSchemaVersionTable,
   ]
 }
@@ -130,10 +191,17 @@ export const NODE_QUERIES = {
     DELETE FROM nodes WHERE id = ?
   `,
 
+  /**
+   * Select nodes by label using JSON functions
+   * Note: This query searches the JSON labels array for a matching value
+   */
   selectByLabel: `
     SELECT id, labels, properties, created_at, updated_at
     FROM nodes
-    WHERE json_each.value = ?
+    WHERE json_valid(labels) AND EXISTS (
+      SELECT 1 FROM json_each(labels)
+      WHERE json_each.value = ?
+    )
   `,
 
   selectAll: `

@@ -592,10 +592,12 @@ describe('SchemaManager', () => {
         if (sql.includes("type='index'")) {
           return {
             toArray: () => [
+              { name: 'idx_nodes_labels' },
               { name: 'idx_relationships_start' },
               { name: 'idx_relationships_end' },
               { name: 'idx_relationships_type' },
-              { name: 'idx_nodes_labels' },
+              { name: 'idx_relationships_start_type' },
+              { name: 'idx_relationships_end_type' },
             ],
           }
         }

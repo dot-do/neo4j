@@ -43,7 +43,7 @@ export default {
 
     return new Response(JSON.stringify({
       name: 'neo4j.do',
-      version: '0.1.0',
+      version: '0.1.1',
       description: 'Neo4j-compatible graph database on Cloudflare Workers',
       status: 'initializing',
       path: url.pathname,

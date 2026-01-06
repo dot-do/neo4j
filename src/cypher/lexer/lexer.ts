@@ -307,7 +307,11 @@ export class Lexer {
       }
       hex += this.advance()
     }
-    return String.fromCharCode(parseInt(hex, 16))
+    const codePoint = parseInt(hex, 16)
+    if (codePoint > 0x10FFFF) {
+      throw new LexerError(`Invalid unicode code point: U+${hex}`, startLine, startColumn)
+    }
+    return String.fromCodePoint(codePoint)
   }
 
   /**

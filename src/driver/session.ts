@@ -3,15 +3,18 @@
  * Compatible with neo4j-driver npm package
  */
 
-import { Result, Record } from '../result'
+import { Result, Record as Neo4jRecord } from '../result'
+import { ResultSummary as ResultSummaryImpl } from '../result/result-summary'
 import { Transaction, ManagedTransaction } from './transaction'
 import type {
   SessionConfig,
   TransactionConfig,
   AccessMode,
   RecordShape,
-  ResultSummary,
 } from '../types'
+
+/** Type alias for query parameters */
+type QueryParameters = Record<string, unknown>
 
 const DEFAULT_MAX_TRANSACTION_RETRY_TIME = 30000 // 30 seconds
 
@@ -22,9 +25,9 @@ type SessionState = 'open' | 'closed'
  */
 export type QueryExecutor = (
   query: string,
-  parameters?: Record<string, unknown>,
+  parameters?: QueryParameters,
   config?: TransactionConfig
-) => Promise<{ keys: string[]; records: unknown[][]; summary: ResultSummary }>
+) => Promise<{ keys: string[]; records: unknown[][]; summary: ResultSummaryImpl }>
 
 /**
  * Internal transaction functions type
@@ -96,7 +99,7 @@ export class Session {
    */
   run<T extends RecordShape = RecordShape>(
     query: string,
-    parameters?: Record<string, unknown>,
+    parameters?: QueryParameters,
     config?: TransactionConfig
   ): Result<T> {
     if (this._state !== 'open') {
@@ -112,7 +115,7 @@ export class Session {
       .then(({ keys, records, summary }) => {
         result._setKeys(keys)
         for (const values of records) {
-          result._pushRecord(new Record<T>(keys, values))
+          result._pushRecord(new Neo4jRecord(keys, values as unknown[]))
         }
         result._setSummary(summary)
       })
@@ -167,7 +170,7 @@ export class Session {
     work: (tx: Transaction) => Promise<T>,
     config?: TransactionConfig
   ): Promise<T> {
-    return this._executeWithRetry(work, 'READ', config)
+    return this._executeWithRetry((tx) => work(tx as Transaction), 'READ', config)
   }
 
   /**
@@ -178,7 +181,7 @@ export class Session {
     work: (tx: Transaction) => Promise<T>,
     config?: TransactionConfig
   ): Promise<T> {
-    return this._executeWithRetry(work, 'WRITE', config)
+    return this._executeWithRetry((tx) => work(tx as Transaction), 'WRITE', config)
   }
 
   /**
@@ -205,7 +208,7 @@ export class Session {
    * Execute a unit of work with automatic retry on transient errors
    */
   private async _executeWithRetry<T>(
-    work: (tx: ManagedTransaction | Transaction) => Promise<T>,
+    work: (tx: ManagedTransaction) => Promise<T>,
     _accessMode: AccessMode,
     config?: TransactionConfig
   ): Promise<T> {
@@ -340,6 +343,13 @@ export class Session {
    */
   get fetchSize(): number {
     return this._fetchSize
+  }
+
+  /**
+   * Get the impersonated user (if any)
+   */
+  get impersonatedUser(): string | undefined {
+    return this._impersonatedUser
   }
 
   /**

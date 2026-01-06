@@ -5,7 +5,7 @@
 
 import { Result, Record as Neo4jRecord } from '../result'
 import { ResultSummary as ResultSummaryImpl } from '../result/result-summary'
-import type { TransactionConfig } from '../types'
+import type { TransactionConfig, RecordShape } from '../types'
 
 export type TransactionState = 'open' | 'committed' | 'rolled_back' | 'failed'
 
@@ -17,7 +17,7 @@ type QueryResultData = { keys: string[]; records: unknown[][]; summary: ResultSu
  * This provides a subset of Transaction methods for use in executeRead/executeWrite
  */
 export interface ManagedTransaction {
-  run(query: string, parameters?: QueryParameters): Result
+  run<T extends RecordShape = RecordShape>(query: string, parameters?: QueryParameters): Result<T>
 }
 
 /**
@@ -58,23 +58,23 @@ export class Transaction implements ManagedTransaction {
   /**
    * Run a Cypher query within this transaction
    */
-  run(query: string, parameters?: QueryParameters): Result {
+  run<T extends RecordShape = RecordShape>(query: string, parameters?: QueryParameters): Result<T> {
     if (this._state !== 'open') {
-      const result = new Result()
+      const result = new Result<T>()
       result._setError(
         new Error(`Cannot run query on transaction with state "${this._state}"`)
       )
       return result
     }
 
-    const result = new Result()
+    const result = new Result<T>()
 
     // Execute query asynchronously
     this._executeQuery(query, parameters)
       .then(({ keys, records, summary }) => {
         result._setKeys(keys)
         for (const values of records) {
-          result._pushRecord(new Neo4jRecord(keys, values))
+          result._pushRecord(new Neo4jRecord<T>(keys, values))
         }
         result._setSummary(summary)
       })
@@ -162,5 +162,12 @@ export class Transaction implements ManagedTransaction {
    */
   get state(): TransactionState {
     return this._state
+  }
+
+  /**
+   * Get the transaction configuration
+   */
+  get config(): TransactionConfig {
+    return this._config
   }
 }

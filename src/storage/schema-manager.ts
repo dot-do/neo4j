@@ -52,12 +52,18 @@ const REQUIRED_TABLES = ['nodes', 'relationships', 'schema_version']
 
 /**
  * Required indexes for schema integrity
+ * These indexes are created by getSchemaInitStatements() in schema.ts
  */
 const REQUIRED_INDEXES = [
+  // Node indexes
+  'idx_nodes_labels',
+  // Relationship indexes (single column)
   'idx_relationships_start',
   'idx_relationships_end',
   'idx_relationships_type',
-  'idx_nodes_labels',
+  // Relationship indexes (composite for common traversal patterns)
+  'idx_relationships_start_type',
+  'idx_relationships_end_type',
 ]
 
 /**
@@ -107,7 +113,7 @@ const DEFAULT_MIGRATIONS: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_nodes_labels ON nodes(labels)
       `)
 
-      // Create indexes on relationships for fast lookups
+      // Create indexes on relationships for fast lookups (single column)
       storage.sql.exec(`
         CREATE INDEX IF NOT EXISTS idx_relationships_start ON relationships(start_node_id)
       `)
@@ -119,9 +125,21 @@ const DEFAULT_MIGRATIONS: Migration[] = [
       storage.sql.exec(`
         CREATE INDEX IF NOT EXISTS idx_relationships_type ON relationships(type)
       `)
+
+      // Create composite indexes for common traversal patterns
+      storage.sql.exec(`
+        CREATE INDEX IF NOT EXISTS idx_relationships_start_type ON relationships(start_node_id, type)
+      `)
+
+      storage.sql.exec(`
+        CREATE INDEX IF NOT EXISTS idx_relationships_end_type ON relationships(end_node_id, type)
+      `)
     },
     down: async (storage: DurableObjectStorage) => {
-      // Drop indexes first
+      // Drop indexes first (composite indexes)
+      storage.sql.exec(`DROP INDEX IF EXISTS idx_relationships_start_type`)
+      storage.sql.exec(`DROP INDEX IF EXISTS idx_relationships_end_type`)
+      // Drop indexes (single column)
       storage.sql.exec(`DROP INDEX IF EXISTS idx_nodes_labels`)
       storage.sql.exec(`DROP INDEX IF EXISTS idx_relationships_start`)
       storage.sql.exec(`DROP INDEX IF EXISTS idx_relationships_end`)

@@ -233,6 +233,18 @@ function createMockState(): DurableObjectState {
   } as unknown as DurableObjectState
 }
 
+/**
+ * Helper to create GraphDO and wait for initialization
+ * In a real DO runtime, blockConcurrencyWhile blocks all requests until completion.
+ * In tests, we simulate this by waiting for the initialization promise.
+ */
+async function createInitializedGraphDO(state: DurableObjectState, env: Env): Promise<GraphDO> {
+  const graphDO = new GraphDO(state, env)
+  // Wait for microtasks to complete (initialization is async but operations are sync)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  return graphDO
+}
+
 interface DurableObjectId {
   toString(): string
   equals(other: DurableObjectId): boolean
@@ -686,7 +698,7 @@ describe('GraphDO Durable Object', () => {
     })
 
     it('should return health status object', async () => {
-      const graphDO = new GraphDO(state, env)
+      const graphDO = await createInitializedGraphDO(state, env)
       const request = new Request('http://localhost/health', { method: 'GET' })
 
       const response = await graphDO.fetch(request)

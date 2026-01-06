@@ -42,6 +42,24 @@ interface VariableBinding {
   nodeIndex?: number
 }
 
+/**
+ * Builds a parameterized label check condition using json_each for exact matching.
+ * This avoids SQL injection and LIKE pattern vulnerabilities entirely.
+ *
+ * Uses SQLite's json_each() function to iterate over the JSON array and check
+ * for exact label matches. This is safer than LIKE patterns which can be
+ * manipulated with wildcards and special characters.
+ *
+ * @param alias The table alias to check labels on
+ * @param label The label value to search for
+ * @param params The params array to push the label value to
+ * @returns A SQL condition string with a parameterized label check
+ */
+function buildLabelCondition(alias: string, label: string, params: any[]): string {
+  params.push(label)
+  return `EXISTS (SELECT 1 FROM json_each(${alias}.labels) WHERE json_each.value = ?)`
+}
+
 export class SQLGenerator {
   private params: any[] = []
   private variableBindings: Map<string, VariableBinding> = new Map()
@@ -200,10 +218,10 @@ export class SQLGenerator {
             }
           }
 
-          // Add label conditions
+          // Add label conditions (parameterized using json_each for exact matching)
           if (node.labels.length > 0) {
             for (const label of node.labels) {
-              whereConditions.push(`json_extract(${alias}.labels, '$') LIKE '%"${label}"%'`)
+              whereConditions.push(buildLabelCondition(alias, label, this.params))
             }
           }
 
@@ -309,10 +327,10 @@ export class SQLGenerator {
             }
           }
 
-          // Add label conditions for next node
+          // Add label conditions for next node (parameterized using json_each for exact matching)
           if (nextNode.labels.length > 0) {
             for (const label of nextNode.labels) {
-              whereConditions.push(`json_extract(${actualNextAlias}.labels, '$') LIKE '%"${label}"%'`)
+              whereConditions.push(buildLabelCondition(actualNextAlias, label, this.params))
             }
           }
 
@@ -517,15 +535,26 @@ export class SQLGenerator {
     const startJoinCol = rel.direction === 'LEFT' ? 'end_node_id' : 'start_node_id'
     const endJoinCol = rel.direction === 'LEFT' ? 'start_node_id' : 'end_node_id'
 
-    // Build label conditions
+    // Build label conditions (parameterized using json_each for exact matching)
     let startLabelCondition = ''
     let endLabelCondition = ''
 
     if (startNode.labels.length > 0) {
-      startLabelCondition = startNode.labels.map((l) => `json_extract(${startAlias}.labels, '$') LIKE '%"${l}"%'`).join(' AND ')
+      startLabelCondition = startNode.labels.map((l) => {
+        this.params.push(l)
+        return `EXISTS (SELECT 1 FROM json_each(n1.labels) WHERE json_each.value = ?)`
+      }).join(' AND ')
     }
     if (endNode.labels.length > 0) {
-      endLabelCondition = endNode.labels.map((l) => `json_extract(${endAlias}.labels, '$') LIKE '%"${l}"%'`).join(' AND ')
+      // Note: end label params are pushed after start label params
+      // Store them separately and push at the end to maintain order
+      const endLabelParams: string[] = []
+      endLabelCondition = endNode.labels.map((l) => {
+        endLabelParams.push(l)
+        return `EXISTS (SELECT 1 FROM json_each(${endAlias}.labels) WHERE json_each.value = ?)`
+      }).join(' AND ')
+      // Push end label params after all other params
+      endLabelParams.forEach(p => this.params.push(p))
     }
 
     // Build recursive CTE
@@ -538,7 +567,7 @@ export class SQLGenerator {
   FROM nodes n1
   JOIN relationships r ON r.${startJoinCol} = n1.id ${typeCondition}
   JOIN nodes n2 ON n2.id = r.${endJoinCol}
-  ${startLabelCondition ? `WHERE ${startLabelCondition.replace(new RegExp(startAlias, 'g'), 'n1')}` : ''}
+  ${startLabelCondition ? `WHERE ${startLabelCondition}` : ''}
 
   UNION ALL
 
@@ -627,12 +656,13 @@ WHERE path_cte.depth >= ${minHops}${endLabelCondition ? ` AND ${endLabelConditio
           )
         : '{}'
 
-      // Build WHERE conditions for the match check
+      // Build WHERE conditions for the match check (parameterized using json_each for exact matching)
       const conditions: string[] = []
 
       if (node.labels.length > 0) {
         for (const label of node.labels) {
-          conditions.push(`json_extract(labels, '$') LIKE '%"${label}"%'`)
+          this.params.push(label)
+          conditions.push(`EXISTS (SELECT 1 FROM json_each(labels) WHERE json_each.value = ?)`)
         }
       }
 
@@ -716,13 +746,13 @@ WHERE NOT EXISTS (
         const binding = this.variableBindings.get(labelItem.variable)
 
         if (binding?.type === 'node') {
-          // Add labels to existing labels array
+          // Add labels to existing labels array (parameterized using json_each for exact matching)
           for (const label of labelItem.labels) {
             statements.push(
-              `UPDATE nodes SET labels = json_insert(labels, '$[#]', ?) WHERE id IN (SELECT ${binding.tableAlias}.id FROM ${fromClause} ${whereClause}) AND NOT json_extract(labels, '$') LIKE ?`
+              `UPDATE nodes SET labels = json_insert(labels, '$[#]', ?) WHERE id IN (SELECT ${binding.tableAlias}.id FROM ${fromClause} ${whereClause}) AND NOT EXISTS (SELECT 1 FROM json_each(labels) WHERE json_each.value = ?)`
             )
             this.params.push(label)
-            this.params.push(`%"${label}"%`)
+            this.params.push(label)
           }
         }
       }

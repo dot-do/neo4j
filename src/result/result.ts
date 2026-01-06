@@ -9,13 +9,14 @@
 
 import { Record } from './record'
 import { ResultSummary, ResultSummaryMetadata } from './result-summary'
+import type { RecordShape } from '../types'
 
 /**
  * Observer interface for subscribing to result events
  */
-export interface ResultObserver {
+export interface ResultObserver<T extends RecordShape = RecordShape> {
   onKeys?: (keys: string[]) => void
-  onNext?: (record: Record) => void
+  onNext?: (record: Record<T>) => void
   onCompleted?: (summary: ResultSummary) => void
   onError?: (error: Error) => void
 }
@@ -44,14 +45,14 @@ type ResultState = 'pending' | 'streaming' | 'completed' | 'error'
  * - Using records property: `const records = await result.records`
  * - Using subscribe(): `result.subscribe({ onNext: (record) => ... })`
  */
-export class Result implements AsyncIterable<Record> {
+export class Result<T extends RecordShape = RecordShape> implements AsyncIterable<Record<T>> {
   private _keys: string[] | null = null
-  private _records: Record[] = []
+  private _records: Record<T>[] = []
   private _summary: ResultSummary | null = null
   private _error: Error | null = null
   private _state: ResultState = 'pending'
   private _queryText: string
-  private _parameters: Record<string, unknown>
+  private _parameters: globalThis.Record<string, unknown>
   private _lazy: boolean
 
   // Promise-based resolution for async methods
@@ -64,16 +65,16 @@ export class Result implements AsyncIterable<Record> {
   private _rejectCompletion!: (error: Error) => void
 
   // For lazy streaming iteration
-  private _recordQueue: Record[] = []
+  private _recordQueue: Record<T>[] = []
   private _recordWaiters: Array<{
-    resolve: (result: IteratorResult<Record>) => void
+    resolve: (result: IteratorResult<Record<T>>) => void
     reject: (error: Error) => void
   }> = []
   private _streamEnded = false
 
   constructor(
-    queryText: string,
-    parameters: Record<string, unknown> = {},
+    queryText: string = '',
+    parameters: globalThis.Record<string, unknown> = {},
     options: ResultOptions = {}
   ) {
     this._queryText = queryText
@@ -106,11 +107,19 @@ export class Result implements AsyncIterable<Record> {
   }
 
   /**
+   * Get the keys synchronously if they are available, or null otherwise.
+   * @internal
+   */
+  _getKeys(): string[] | null {
+    return this._keys
+  }
+
+  /**
    * Property that returns a promise resolving to all records.
    * In eager mode, waits for all records to be buffered.
    * In lazy mode, consumes the entire stream and buffers all records.
    */
-  get records(): Promise<Record[]> {
+  get records(): Promise<Record<T>[]> {
     return this._completionPromise.then(() => {
       if (this._error) throw this._error
       return [...this._records]
@@ -121,7 +130,7 @@ export class Result implements AsyncIterable<Record> {
    * Returns a single record from the result.
    * Throws an error if there is not exactly one record.
    */
-  async single(): Promise<Record> {
+  async single(): Promise<Record<T>> {
     const records = await this.records
     if (records.length === 0) {
       throw new Error('Expected exactly one record, but got none')
@@ -136,7 +145,7 @@ export class Result implements AsyncIterable<Record> {
    * Returns the first record without consuming the result.
    * Returns null if no records are available.
    */
-  async peek(): Promise<Record | null> {
+  async peek(): Promise<Record<T> | null> {
     // In eager mode, wait for completion
     if (!this._lazy) {
       await this._completionPromise
@@ -165,7 +174,7 @@ export class Result implements AsyncIterable<Record> {
     // Wait for first record in lazy mode
     return new Promise((resolve, reject) => {
       const waiter = {
-        resolve: (result: IteratorResult<Record>) => {
+        resolve: (result: IteratorResult<Record<T>>) => {
           if (result.done) {
             resolve(null)
           } else {
@@ -206,7 +215,7 @@ export class Result implements AsyncIterable<Record> {
   /**
    * Returns the first record or null if no records exist.
    */
-  async first(): Promise<Record | null> {
+  async first(): Promise<Record<T> | null> {
     const records = await this.records
     return records[0] ?? null
   }
@@ -215,7 +224,7 @@ export class Result implements AsyncIterable<Record> {
    * Subscribe to result events.
    * Callbacks are invoked as data becomes available.
    */
-  subscribe(observer: ResultObserver): void {
+  subscribe(observer: ResultObserver<T>): void {
     // Handle keys
     this._keysPromise
       .then(keys => {
@@ -262,7 +271,7 @@ export class Result implements AsyncIterable<Record> {
   /**
    * Async iterator support for `for await...of` loops.
    */
-  async *[Symbol.asyncIterator](): AsyncGenerator<Record, void, undefined> {
+  async *[Symbol.asyncIterator](): AsyncGenerator<Record<T>, void, undefined> {
     if (!this._lazy) {
       // Eager mode: wait for all records and iterate
       await this._completionPromise
@@ -287,7 +296,7 @@ export class Result implements AsyncIterable<Record> {
         }
 
         // Wait for next record
-        const result = await new Promise<IteratorResult<Record>>((resolve, reject) => {
+        const result = await new Promise<IteratorResult<Record<T>>>((resolve, reject) => {
           this._recordWaiters.push({ resolve, reject })
         })
 
@@ -319,7 +328,7 @@ export class Result implements AsyncIterable<Record> {
   /**
    * @internal Add a record to the result
    */
-  _pushRecord(record: Record): void {
+  _pushRecord(record: Record<T>): void {
     if (this._lazy) {
       // In lazy mode, queue records for streaming
       const waiter = this._recordWaiters.shift()
@@ -411,19 +420,19 @@ export class Result implements AsyncIterable<Record> {
   /**
    * Create an eager (buffered) Result from records
    */
-  static fromRecords(
+  static fromRecords<T extends RecordShape = RecordShape>(
     keys: string[],
-    records: Array<any[]>,
+    records: Array<unknown[]>,
     queryText: string = '',
-    parameters: Record<string, unknown> = {},
+    parameters: globalThis.Record<string, unknown> = {},
     summaryMetadata?: ResultSummaryMetadata
-  ): Result {
-    const result = new Result(queryText, parameters, { lazy: false })
+  ): Result<T> {
+    const result = new Result<T>(queryText, parameters, { lazy: false })
 
     result._setKeys(keys)
 
     for (const values of records) {
-      result._pushRecord(new Record(keys, values))
+      result._pushRecord(new Record<T>(keys, values))
     }
 
     const summary = new ResultSummary(
@@ -439,10 +448,10 @@ export class Result implements AsyncIterable<Record> {
   /**
    * Create an empty Result
    */
-  static empty(
+  static empty<T extends RecordShape = RecordShape>(
     queryText: string = '',
-    parameters: Record<string, unknown> = {}
-  ): Result {
-    return Result.fromRecords([], [], queryText, parameters)
+    parameters: globalThis.Record<string, unknown> = {}
+  ): Result<T> {
+    return Result.fromRecords<T>([], [], queryText, parameters)
   }
 }

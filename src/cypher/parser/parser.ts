@@ -320,8 +320,9 @@ export class Parser {
 
   /**
    * Parse a pattern (sequence of nodes and relationships)
+   * Optionally parses comma-separated patterns for CREATE statements
    */
-  private parsePattern(): Pattern {
+  private parsePattern(allowMultiple: boolean = false): Pattern {
     const elements: PatternElement[] = []
 
     // Parse the first node
@@ -331,6 +332,17 @@ export class Parser {
     while (this.isRelationshipStart()) {
       elements.push(this.parseRelationshipPattern())
       elements.push(this.parseNodePattern())
+    }
+
+    // Handle comma-separated patterns (for CREATE)
+    while (allowMultiple && this.check(TokenType.COMMA)) {
+      this.advance() // consume comma
+      elements.push(this.parseNodePattern())
+      // Continue parsing relationship-node pairs from new node
+      while (this.isRelationshipStart()) {
+        elements.push(this.parseRelationshipPattern())
+        elements.push(this.parseNodePattern())
+      }
     }
 
     return {
@@ -347,6 +359,55 @@ export class Parser {
   }
 
   /**
+   * Check if current token is a keyword that can be used as an identifier
+   */
+  private isIdentifierOrKeyword(): boolean {
+    const type = this.peek().type
+    return type === TokenType.IDENTIFIER ||
+      // Allow keywords to be used as identifiers in certain contexts (labels, variables)
+      type === TokenType.OPTIONAL ||
+      type === TokenType.MATCH ||
+      type === TokenType.CREATE ||
+      type === TokenType.MERGE ||
+      type === TokenType.DELETE ||
+      type === TokenType.SET ||
+      type === TokenType.REMOVE ||
+      type === TokenType.WITH ||
+      type === TokenType.UNWIND ||
+      type === TokenType.CALL ||
+      type === TokenType.YIELD ||
+      type === TokenType.UNION ||
+      type === TokenType.ALL ||
+      type === TokenType.ORDER ||
+      type === TokenType.BY ||
+      type === TokenType.ASC ||
+      type === TokenType.DESC ||
+      type === TokenType.SKIP ||
+      type === TokenType.LIMIT ||
+      type === TokenType.ON ||
+      type === TokenType.CASE ||
+      type === TokenType.WHEN ||
+      type === TokenType.THEN ||
+      type === TokenType.ELSE ||
+      type === TokenType.END
+  }
+
+  /**
+   * Consume an identifier or keyword-as-identifier
+   */
+  private consumeIdentifierOrKeyword(): string {
+    if (this.isIdentifierOrKeyword()) {
+      return this.advance().value
+    }
+    const token = this.peek()
+    throw new ParserError(
+      `Expected identifier, got ${token.type}`,
+      token.line,
+      token.column
+    )
+  }
+
+  /**
    * Parse a node pattern like (n), (n:Label), (n {prop: value})
    */
   private parseNodePattern(): NodePattern {
@@ -357,15 +418,24 @@ export class Parser {
     let properties: MapLiteral | undefined
 
     // Parse optional variable
-    if (this.check(TokenType.IDENTIFIER)) {
-      variable = this.advance().value
+    if (this.isIdentifierOrKeyword()) {
+      variable = this.consumeIdentifierOrKeyword()
     }
 
     // Parse optional labels
     while (this.check(TokenType.COLON)) {
       this.advance()
-      const labelToken = this.expect(TokenType.IDENTIFIER, 'Expected label name after :')
-      labels.push(labelToken.value)
+      // Allow keywords as labels
+      if (this.isIdentifierOrKeyword()) {
+        labels.push(this.consumeIdentifierOrKeyword())
+      } else {
+        const token = this.peek()
+        throw new ParserError(
+          'Expected label name after :',
+          token.line,
+          token.column
+        )
+      }
     }
 
     // Parse optional properties
@@ -937,11 +1007,11 @@ export class Parser {
 
   /**
    * Parse CREATE clause
-   * Syntax: CREATE pattern
+   * Syntax: CREATE pattern [, pattern ...]
    */
   private parseCreateClause(): CreateClause {
     this.expect(TokenType.CREATE)
-    const pattern = this.parsePattern()
+    const pattern = this.parsePattern(true) // Allow comma-separated patterns
 
     return {
       type: 'CreateClause',

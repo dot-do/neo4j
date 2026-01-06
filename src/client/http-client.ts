@@ -7,6 +7,50 @@ import type { AuthToken } from './types'
 import { createErrorFromResponse, NetworkError, TimeoutError } from './errors'
 
 /**
+ * Network error codes from Node.js
+ */
+const NETWORK_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'ETIMEDOUT',
+  'ECONNRESET',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'EPIPE',
+  'ECONNABORTED',
+])
+
+/**
+ * Check if an error is a network-related error
+ * This function uses robust detection that works across all JS engines
+ */
+function isNetworkError(error: Error): boolean {
+  // Check for AbortError first (used for timeouts)
+  if (error.name === 'AbortError') {
+    return false
+  }
+
+  // Check for DOMException with name 'NetworkError'
+  if (error instanceof DOMException && error.name === 'NetworkError') {
+    return true
+  }
+
+  // Check for Node.js error codes
+  const errorCode = (error as NodeJS.ErrnoException).code
+  if (errorCode && NETWORK_ERROR_CODES.has(errorCode)) {
+    return true
+  }
+
+  // All TypeErrors from fetch are network errors
+  // Different JS engines produce different error messages, so we don't check the message
+  if (error.name === 'TypeError') {
+    return true
+  }
+
+  return false
+}
+
+/**
  * HTTP client configuration
  */
 export interface HttpClientConfig {
@@ -101,7 +145,7 @@ export class HttpClient {
         if (error.name === 'AbortError') {
           throw new TimeoutError(timeout, 'HTTP request')
         }
-        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        if (isNetworkError(error)) {
           throw new NetworkError(`Failed to fetch ${url}`, error)
         }
       }
@@ -136,7 +180,7 @@ export class HttpClient {
         if (error.name === 'AbortError') {
           throw new TimeoutError(timeout, 'HTTP request')
         }
-        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        if (isNetworkError(error)) {
           throw new NetworkError(`Failed to fetch ${url}`, error)
         }
       }

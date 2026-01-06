@@ -4,14 +4,16 @@
  */
 
 import { Session, QueryExecutor, TransactionFunctions } from './session'
+import { RxSession, RxSessionConfig } from './rx-session'
 import { parseUri } from './uri'
+import { CypherExecutor } from '../cypher/executor'
+import { ResultSummary as ResultSummaryImpl } from '../result/result-summary'
 import type {
   AuthToken,
   Config,
   SessionConfig,
   TransactionConfig,
   ParsedUri,
-  ResultSummary,
   ServerInfo,
 } from '../types'
 
@@ -56,6 +58,9 @@ export class Driver {
   private readonly _activeSessions: Set<Session> = new Set()
   private readonly _sessionCloseCallbacks: SessionCloseCallback[] = []
 
+  // Cypher executor for query execution
+  private readonly _executor: CypherExecutor
+
   constructor(uri: string, authToken?: AuthToken, config?: Config) {
     this._uri = uri
     this._parsedUri = parseUri(uri)
@@ -77,6 +82,9 @@ export class Driver {
         config?.connectionAcquisitionTimeout ?? DEFAULT_CONNECTION_ACQUISITION_TIMEOUT,
       ...config,
     }
+
+    // Initialize the Cypher executor
+    this._executor = new CypherExecutor()
   }
 
   /**
@@ -108,6 +116,24 @@ export class Driver {
     this._activeSessions.add(session)
 
     return session
+  }
+
+  /**
+   * Create a new reactive session for interacting with the database
+   */
+  rxSession(config?: RxSessionConfig): RxSession {
+    if (this._state !== 'open') {
+      throw new Error('Cannot create session on closed driver')
+    }
+
+    const rxSessionConfig: RxSessionConfig = {
+      database: config?.database ?? this._parsedUri.database,
+      defaultAccessMode: config?.defaultAccessMode ?? 'WRITE',
+      bookmarks: config?.bookmarks,
+      fetchSize: config?.fetchSize,
+    }
+
+    return new RxSession(rxSessionConfig)
   }
 
   /**
@@ -153,7 +179,7 @@ export class Driver {
       query: string,
       parameters?: Record<string, unknown>,
       _config?: TransactionConfig
-    ): Promise<{ keys: string[]; records: unknown[][]; summary: ResultSummary }> => {
+    ): Promise<{ keys: string[]; records: unknown[][]; summary: ResultSummaryImpl }> => {
       // This is a placeholder implementation
       // In production, this would execute the query against the Durable Object
       return this._executeQuery(query, parameters)
@@ -170,10 +196,17 @@ export class Driver {
         _bookmarks: string[],
         _config: TransactionConfig
       ) => {
-        // In production, this would start a transaction in the Durable Object
+        // Track transaction state and pending operations
         let committed = false
         let rolledBack = false
         const transactionId = `tx-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+        // Track created nodes and relationships for rollback
+        const createdNodeIds: number[] = []
+        const createdRelationshipIds: number[] = []
+
+        // Get the storage for tracking changes during the transaction
+        const storage = this._executor.getStorage()
 
         return {
           executeQuery: async (
@@ -183,14 +216,38 @@ export class Driver {
             if (committed || rolledBack) {
               throw new Error('Transaction has already been closed')
             }
-            return this._executeQuery(query, parameters, database)
+
+            // Track storage state before execution
+            const beforeNodeCount = storage.nodeCount
+            const beforeRelCount = storage.relationshipCount
+
+            const result = await this._executeQuery(query, parameters, database)
+
+            // Track new nodes/relationships created
+            const afterNodeCount = storage.nodeCount
+            const afterRelCount = storage.relationshipCount
+
+            // If nodes were created, track the IDs (approximate by counting)
+            if (afterNodeCount > beforeNodeCount) {
+              // Get newly created node IDs (they are sequential)
+              for (let i = beforeNodeCount + 1; i <= afterNodeCount; i++) {
+                createdNodeIds.push(i)
+              }
+            }
+            if (afterRelCount > beforeRelCount) {
+              for (let i = beforeRelCount + 1; i <= afterRelCount; i++) {
+                createdRelationshipIds.push(i)
+              }
+            }
+
+            return result
           },
           commit: async (): Promise<string | null> => {
             if (committed || rolledBack) {
               throw new Error('Transaction has already been closed')
             }
             committed = true
-            // Return a bookmark for this transaction
+            // Data is already persisted, nothing to do
             return `${database}:${transactionId}`
           },
           rollback: async (): Promise<void> => {
@@ -198,6 +255,24 @@ export class Driver {
               throw new Error('Transaction has already been closed')
             }
             rolledBack = true
+
+            // Delete created relationships first (due to foreign key constraints)
+            for (const relId of createdRelationshipIds.reverse()) {
+              try {
+                await storage.deleteRelationship(relId)
+              } catch {
+                // Ignore errors - relationship may already be deleted
+              }
+            }
+
+            // Delete created nodes
+            for (const nodeId of createdNodeIds.reverse()) {
+              try {
+                await storage.deleteNode(nodeId)
+              } catch {
+                // Ignore errors - node may already be deleted
+              }
+            }
           },
         }
       },
@@ -205,61 +280,83 @@ export class Driver {
   }
 
   /**
-   * Execute a query (placeholder for actual implementation)
+   * Execute a query against the Cypher executor
    */
   private async _executeQuery(
     query: string,
     parameters?: Record<string, unknown>,
     _database?: string
-  ): Promise<{ keys: string[]; records: unknown[][]; summary: ResultSummary }> {
-    // This is a placeholder implementation
-    // In production, this would:
-    // 1. Parse the Cypher query
-    // 2. Translate to SQL for SQLite
-    // 3. Execute against the Durable Object's SQL storage
-    // 4. Return results
+  ): Promise<{ keys: string[]; records: unknown[][]; summary: ResultSummaryImpl }> {
+    const startTime = Date.now()
 
-    const summary: ResultSummary = {
-      query: { text: query, parameters: parameters ?? {} },
-      queryType: 'r',
-      counters: this._createEmptyCounters(),
-      updateStatistics: this._createEmptyCounters(),
-      notifications: [],
-      server: {
-        address: `${this._parsedUri.host}:${this._parsedUri.port}`,
-      },
-      resultAvailableAfter: 0,
-      resultConsumedAfter: 0,
-      database: { name: _database ?? this._parsedUri.database ?? 'neo4j' },
-    }
+    // Execute the query using the CypherExecutor
+    const result = await this._executor.execute(query, parameters ?? {})
+
+    const endTime = Date.now()
+    const executionTime = endTime - startTime
+
+    // Determine query type based on what was executed
+    const queryType = this._determineQueryType(query, result.summary)
+
+    const summary = new ResultSummaryImpl(
+      query,
+      parameters ?? {},
+      {
+        type: queryType,
+        stats: result.summary,
+        notifications: [],
+        server: {
+          address: `${this._parsedUri.host}:${this._parsedUri.port}`,
+          version: 'neo4j.do/1.0.0',
+        },
+        resultAvailableAfter: executionTime,
+        resultConsumedAfter: executionTime,
+        db: { name: _database ?? this._parsedUri.database ?? 'neo4j' },
+      }
+    )
 
     return {
-      keys: [],
-      records: [],
+      keys: result.keys,
+      records: result.records,
       summary,
     }
   }
 
   /**
-   * Create empty query counters
+   * Determine query type based on the query and results
    */
-  private _createEmptyCounters() {
-    return {
-      containsUpdates: () => false,
-      containsSystemUpdates: () => false,
-      nodesCreated: () => 0,
-      nodesDeleted: () => 0,
-      relationshipsCreated: () => 0,
-      relationshipsDeleted: () => 0,
-      propertiesSet: () => 0,
-      labelsAdded: () => 0,
-      labelsRemoved: () => 0,
-      indexesAdded: () => 0,
-      indexesRemoved: () => 0,
-      constraintsAdded: () => 0,
-      constraintsRemoved: () => 0,
-      systemUpdates: () => 0,
+  private _determineQueryType(
+    query: string,
+    summary: {
+      nodesCreated: number
+      nodesDeleted: number
+      relationshipsCreated: number
+      relationshipsDeleted: number
+      propertiesSet: number
+      labelsAdded: number
+      labelsRemoved: number
     }
+  ): 'r' | 'w' | 'rw' | 's' {
+    const upperQuery = query.toUpperCase()
+    const hasWrite =
+      summary.nodesCreated > 0 ||
+      summary.nodesDeleted > 0 ||
+      summary.relationshipsCreated > 0 ||
+      summary.relationshipsDeleted > 0 ||
+      summary.propertiesSet > 0 ||
+      summary.labelsAdded > 0 ||
+      summary.labelsRemoved > 0 ||
+      upperQuery.includes('CREATE') ||
+      upperQuery.includes('DELETE') ||
+      upperQuery.includes('SET') ||
+      upperQuery.includes('MERGE') ||
+      upperQuery.includes('REMOVE')
+
+    const hasRead = upperQuery.includes('MATCH') || upperQuery.includes('RETURN')
+
+    if (hasWrite && hasRead) return 'rw'
+    if (hasWrite) return 'w'
+    return 'r'
   }
 
   /**

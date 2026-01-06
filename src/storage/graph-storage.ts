@@ -19,13 +19,115 @@ import type {
 } from './types'
 
 /**
- * Convert a raw node row from SQLite to a Node object
+ * Custom error class for storage-related errors
  */
-function rowToNode(row: NodeRow): Node {
+export class StorageError extends Error {
+  readonly cause?: unknown
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message)
+    this.name = 'StorageError'
+    this.cause = options?.cause
+  }
+}
+
+/**
+ * Safely parse JSON with error handling
+ * @param json - The JSON string to parse
+ * @param context - Context information for error messages (e.g., "node[1].labels")
+ * @param fallback - Optional fallback value to use on parse failure
+ * @returns The parsed value or fallback
+ * @throws StorageError if parsing fails and no fallback provided
+ */
+function safeJsonParse<T>(json: string | null | undefined, context: string, fallback?: T): T {
+  // Handle null/undefined/empty string
+  if (json === null || json === undefined || json === '') {
+    if (fallback !== undefined) {
+      return fallback
+    }
+    throw new StorageError(
+      `Failed to parse JSON in ${context}: value is empty or null`,
+      { cause: new Error('Empty or null JSON value') }
+    )
+  }
+
+  try {
+    const parsed = JSON.parse(json)
+    // Handle JSON "null" value
+    if (parsed === null) {
+      if (fallback !== undefined) {
+        return fallback
+      }
+    }
+    return parsed
+  } catch (error) {
+    if (fallback !== undefined) {
+      return fallback
+    }
+    throw new StorageError(
+      `Failed to parse JSON in ${context}: ${(error as Error).message}`,
+      { cause: error }
+    )
+  }
+}
+
+/**
+ * Safely parse labels JSON, ensuring it returns an array
+ */
+function safeParseLabels(json: string | null | undefined, nodeId: number): string[] | null {
+  try {
+    const parsed = safeJsonParse<unknown>(json, `node[${nodeId}].labels`, null)
+    if (parsed === null) {
+      return []
+    }
+    // Ensure labels is an array
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+    return parsed as string[]
+  } catch {
+    return null // Signal parsing failure
+  }
+}
+
+/**
+ * Safely parse properties JSON, ensuring it returns an object
+ */
+function safeParseProperties(json: string | null | undefined, entityType: string, entityId: number): Record<string, unknown> | null {
+  try {
+    const parsed = safeJsonParse<unknown>(json, `${entityType}[${entityId}].properties`, null)
+    if (parsed === null) {
+      return {}
+    }
+    // Ensure properties is an object (not array)
+    if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {}
+    }
+    return parsed as Record<string, unknown>
+  } catch {
+    return null // Signal parsing failure
+  }
+}
+
+/**
+ * Convert a raw node row from SQLite to a Node object
+ * Returns null if JSON parsing fails
+ */
+function rowToNode(row: NodeRow): Node | null {
+  const labels = safeParseLabels(row.labels, row.id)
+  if (labels === null) {
+    return null
+  }
+
+  const properties = safeParseProperties(row.properties, 'node', row.id)
+  if (properties === null) {
+    return null
+  }
+
   return {
     id: row.id,
-    labels: JSON.parse(row.labels),
-    properties: JSON.parse(row.properties),
+    labels,
+    properties,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -33,14 +135,20 @@ function rowToNode(row: NodeRow): Node {
 
 /**
  * Convert a raw relationship row from SQLite to a Relationship object
+ * Returns null if JSON parsing fails
  */
-function rowToRelationship(row: RelationshipRow): Relationship {
+function rowToRelationship(row: RelationshipRow): Relationship | null {
+  const properties = safeParseProperties(row.properties, 'relationship', row.id)
+  if (properties === null) {
+    return null
+  }
+
   return {
     id: row.id,
     type: row.type,
     startNodeId: row.start_node_id,
     endNodeId: row.end_node_id,
-    properties: JSON.parse(row.properties),
+    properties,
     createdAt: row.created_at,
   }
 }
@@ -211,10 +319,11 @@ export class GraphStorage implements IGraphStorage {
    */
   async findNodesByLabel(label: string): Promise<Node[]> {
     // Use a query that searches for the label within the JSON array
+    // Only search nodes with valid JSON labels
     const sql = `
       SELECT id, labels, properties, created_at, updated_at
       FROM nodes
-      WHERE EXISTS (
+      WHERE json_valid(labels) AND EXISTS (
         SELECT 1 FROM json_each(labels)
         WHERE json_each.value = ?
       )
@@ -223,7 +332,7 @@ export class GraphStorage implements IGraphStorage {
     const result = await stmt.bind(label).all()
     const rows = extractResults(result) as NodeRow[]
 
-    return rows.map(rowToNode)
+    return rows.map(rowToNode).filter((node): node is Node => node !== null)
   }
 
   /**
@@ -236,7 +345,7 @@ export class GraphStorage implements IGraphStorage {
     const result = await stmt.bind(type).all()
     const rows = extractResults(result) as RelationshipRow[]
 
-    return rows.map(rowToRelationship)
+    return rows.map(rowToRelationship).filter((rel): rel is Relationship => rel !== null)
   }
 
   /**
@@ -248,7 +357,7 @@ export class GraphStorage implements IGraphStorage {
     const result = await stmt.all()
     const rows = extractResults(result) as NodeRow[]
 
-    return rows.map(rowToNode)
+    return rows.map(rowToNode).filter((node): node is Node => node !== null)
   }
 
   /**
@@ -260,7 +369,7 @@ export class GraphStorage implements IGraphStorage {
     const result = await stmt.all()
     const rows = extractResults(result) as RelationshipRow[]
 
-    return rows.map(rowToRelationship)
+    return rows.map(rowToRelationship).filter((rel): rel is Relationship => rel !== null)
   }
 
   /**
@@ -273,7 +382,7 @@ export class GraphStorage implements IGraphStorage {
     const result = await stmt.bind(nodeId).all()
     const rows = extractResults(result) as RelationshipRow[]
 
-    return rows.map(rowToRelationship)
+    return rows.map(rowToRelationship).filter((rel): rel is Relationship => rel !== null)
   }
 
   /**
@@ -286,7 +395,7 @@ export class GraphStorage implements IGraphStorage {
     const result = await stmt.bind(nodeId).all()
     const rows = extractResults(result) as RelationshipRow[]
 
-    return rows.map(rowToRelationship)
+    return rows.map(rowToRelationship).filter((rel): rel is Relationship => rel !== null)
   }
 
   /**

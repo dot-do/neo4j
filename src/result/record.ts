@@ -6,15 +6,17 @@
  * Values can be accessed by column name or by position (0-indexed).
  */
 
-export type Visitor<T = void> = (value: any, key: string, record: Record) => T
+import type { RecordShape } from '../types'
+
+export type Visitor<R = void, T extends RecordShape = RecordShape> = (value: unknown, key: string, record: Record<T>) => R
 
 /**
  * Represents a single row in a query result.
  * Each Record is a collection of named fields with values.
  */
-export class Record implements Iterable<[string, any]> {
+export class Record<T extends RecordShape = RecordShape> implements Iterable<[string, unknown]> {
   private readonly _keys: readonly string[]
-  private readonly _fields: readonly any[]
+  private readonly _fields: readonly unknown[]
   private readonly _fieldLookup: Map<string, number>
 
   /**
@@ -26,7 +28,7 @@ export class Record implements Iterable<[string, any]> {
    */
   constructor(
     keys: string[],
-    fields: any[],
+    fields: unknown[],
     fieldLookup?: Map<string, number>
   ) {
     this._keys = Object.freeze([...keys])
@@ -64,7 +66,9 @@ export class Record implements Iterable<[string, any]> {
    * @returns The value at the specified key/index
    * @throws Error if the key doesn't exist or index is out of bounds
    */
-  get(key: string | number): any {
+  get<K extends keyof T>(key: K): T[K]
+  get(key: string | number): unknown
+  get(key: string | number): unknown {
     if (typeof key === 'number') {
       return this._getByIndex(key)
     }
@@ -75,7 +79,7 @@ export class Record implements Iterable<[string, any]> {
    * Get a value by numeric index (0-indexed position).
    * @internal
    */
-  private _getByIndex(index: number): any {
+  private _getByIndex(index: number): unknown {
     // Validate that the index is an integer
     if (!Number.isInteger(index)) {
       throw new Error(
@@ -99,7 +103,7 @@ export class Record implements Iterable<[string, any]> {
    * Get a value by key (column name).
    * @internal
    */
-  private _getByKey(key: string): any {
+  private _getByKey(key: string): unknown {
     const index = this._fieldLookup.get(key)
     if (index === undefined) {
       throw new Error(
@@ -125,7 +129,7 @@ export class Record implements Iterable<[string, any]> {
    *
    * @param visitor - Function called for each field with (value, key, record)
    */
-  forEach(visitor: Visitor): void {
+  forEach(visitor: Visitor<void, T>): void {
     for (let i = 0; i < this._keys.length; i++) {
       visitor(this._fields[i], this._keys[i], this)
     }
@@ -137,8 +141,8 @@ export class Record implements Iterable<[string, any]> {
    * @param visitor - Function called for each field, returning the transformed value
    * @returns Array of transformed values
    */
-  map<T>(visitor: Visitor<T>): T[] {
-    const result: T[] = []
+  map<R>(visitor: Visitor<R, T>): R[] {
+    const result: R[] = []
     for (let i = 0; i < this._keys.length; i++) {
       result.push(visitor(this._fields[i], this._keys[i], this))
     }
@@ -150,12 +154,12 @@ export class Record implements Iterable<[string, any]> {
    *
    * @returns An object with keys as property names and fields as values
    */
-  toObject(): { [key: string]: any } {
-    const obj: { [key: string]: any } = {}
+  toObject(): T {
+    const obj: RecordShape = {}
     for (let i = 0; i < this._keys.length; i++) {
       obj[this._keys[i]] = this._fields[i]
     }
-    return obj
+    return obj as T
   }
 
   /**
@@ -163,7 +167,7 @@ export class Record implements Iterable<[string, any]> {
    *
    * @returns Array of all field values in order
    */
-  values(): any[] {
+  values(): unknown[] {
     return [...this._fields]
   }
 
@@ -172,8 +176,8 @@ export class Record implements Iterable<[string, any]> {
    *
    * @returns Array of [key, value] tuples
    */
-  entries(): [string, any][] {
-    const result: [string, any][] = []
+  entries(): [string, unknown][] {
+    const result: [string, unknown][] = []
     for (let i = 0; i < this._keys.length; i++) {
       result.push([this._keys[i], this._fields[i]])
     }
@@ -184,7 +188,7 @@ export class Record implements Iterable<[string, any]> {
    * Make Record iterable with for...of loops.
    * Yields [key, value] tuples.
    */
-  *[Symbol.iterator](): Iterator<[string, any]> {
+  *[Symbol.iterator](): Iterator<[string, unknown]> {
     for (let i = 0; i < this._keys.length; i++) {
       yield [this._keys[i], this._fields[i]]
     }

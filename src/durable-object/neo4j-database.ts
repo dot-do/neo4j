@@ -8,6 +8,52 @@
 import { getSchemaInitStatements } from '../storage/schema'
 
 /**
+ * Safe JSON parsing with error handling and meaningful error messages
+ */
+function safeJsonParse<T>(
+  value: string,
+  context: { nodeId?: number; relationshipId?: number; field: string },
+  defaultValue: T
+): T {
+  if (value === null || value === undefined || value === '') {
+    return defaultValue
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+    // Validate the parsed value matches expected type
+    if (context.field === 'labels') {
+      // Labels should be an array
+      if (!Array.isArray(parsed)) {
+        console.warn(
+          `Invalid labels type for ${context.nodeId ? `node ${context.nodeId}` : 'unknown node'}: expected array, got ${typeof parsed}`
+        )
+        return defaultValue
+      }
+    } else if (context.field === 'properties') {
+      // Properties should be a non-null object
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        console.warn(
+          `Invalid properties type for ${context.nodeId ? `node ${context.nodeId}` : context.relationshipId ? `relationship ${context.relationshipId}` : 'unknown entity'}: expected object, got ${parsed === null ? 'null' : Array.isArray(parsed) ? 'array' : typeof parsed}`
+        )
+        return defaultValue
+      }
+    }
+    return parsed as T
+  } catch (error) {
+    const entityInfo = context.nodeId
+      ? `node ${context.nodeId}`
+      : context.relationshipId
+        ? `relationship ${context.relationshipId}`
+        : 'unknown entity'
+    console.warn(
+      `Failed to parse ${context.field} JSON for ${entityInfo}: ${error instanceof Error ? error.message : 'Unknown error'}. Raw value: ${value.substring(0, 100)}${value.length > 100 ? '...' : ''}`
+    )
+    return defaultValue
+  }
+}
+
+/**
  * Node representation
  */
 export interface GraphNode {
@@ -97,7 +143,9 @@ export class Neo4jDatabase {
     const propsJson = JSON.stringify(properties)
 
     const cursor = sql.exec(
-      `INSERT INTO nodes (labels, properties) VALUES ('${labelsJson}', '${propsJson}') RETURNING id`
+      'INSERT INTO nodes (labels, properties) VALUES (?, ?) RETURNING id',
+      labelsJson,
+      propsJson
     )
 
     const row = cursor.one() as { id: number } | undefined
@@ -111,7 +159,7 @@ export class Neo4jDatabase {
     await this.initialize()
 
     const sql = this.state.storage.sql
-    const cursor = sql.exec(`SELECT id, labels, properties, created_at, updated_at FROM nodes WHERE id = ${id}`)
+    const cursor = sql.exec('SELECT id, labels, properties, created_at, updated_at FROM nodes WHERE id = ?', id)
 
     const row = cursor.one() as {
       id: number
@@ -127,8 +175,8 @@ export class Neo4jDatabase {
 
     return {
       id: row.id,
-      labels: JSON.parse(row.labels),
-      properties: JSON.parse(row.properties),
+      labels: safeJsonParse<string[]>(row.labels, { nodeId: row.id, field: 'labels' }, []),
+      properties: safeJsonParse<Record<string, unknown>>(row.properties, { nodeId: row.id, field: 'properties' }, {}),
       created_at: row.created_at,
       updated_at: row.updated_at,
     }
@@ -143,7 +191,7 @@ export class Neo4jDatabase {
     const sql = this.state.storage.sql
     const propsJson = JSON.stringify(properties)
 
-    sql.exec(`UPDATE nodes SET properties = '${propsJson}', updated_at = datetime('now') WHERE id = ${id}`)
+    sql.exec("UPDATE nodes SET properties = ?, updated_at = datetime('now') WHERE id = ?", propsJson, id)
   }
 
   /**
@@ -153,7 +201,7 @@ export class Neo4jDatabase {
     await this.initialize()
 
     const sql = this.state.storage.sql
-    sql.exec(`DELETE FROM nodes WHERE id = ${id}`)
+    sql.exec('DELETE FROM nodes WHERE id = ?', id)
   }
 
   /**
@@ -171,7 +219,11 @@ export class Neo4jDatabase {
     const propsJson = JSON.stringify(properties)
 
     const cursor = sql.exec(
-      `INSERT INTO relationships (type, start_node_id, end_node_id, properties) VALUES ('${type}', ${startNodeId}, ${endNodeId}, '${propsJson}') RETURNING id`
+      'INSERT INTO relationships (type, start_node_id, end_node_id, properties) VALUES (?, ?, ?, ?) RETURNING id',
+      type,
+      startNodeId,
+      endNodeId,
+      propsJson
     )
 
     const row = cursor.one() as { id: number } | undefined
@@ -186,7 +238,8 @@ export class Neo4jDatabase {
 
     const sql = this.state.storage.sql
     const cursor = sql.exec(
-      `SELECT id, type, start_node_id, end_node_id, properties, created_at FROM relationships WHERE id = ${id}`
+      'SELECT id, type, start_node_id, end_node_id, properties, created_at FROM relationships WHERE id = ?',
+      id
     )
 
     const row = cursor.one() as {
@@ -207,7 +260,7 @@ export class Neo4jDatabase {
       type: row.type,
       startNodeId: row.start_node_id,
       endNodeId: row.end_node_id,
-      properties: JSON.parse(row.properties),
+      properties: safeJsonParse<Record<string, unknown>>(row.properties, { relationshipId: row.id, field: 'properties' }, {}),
       created_at: row.created_at,
     }
   }
@@ -219,7 +272,7 @@ export class Neo4jDatabase {
     await this.initialize()
 
     const sql = this.state.storage.sql
-    sql.exec(`DELETE FROM relationships WHERE id = ${id}`)
+    sql.exec('DELETE FROM relationships WHERE id = ?', id)
   }
 
   /**

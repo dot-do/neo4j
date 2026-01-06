@@ -3,7 +3,7 @@ import { defineConfig } from 'tsup'
 export default defineConfig({
   entry: ['src/index.ts'],
   format: ['esm'],
-  dts: false, // TODO: Fix type conflicts for dts generation
+  dts: true,
   sourcemap: true,
   clean: true,
   target: 'es2022',

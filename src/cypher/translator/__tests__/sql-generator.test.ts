@@ -126,7 +126,9 @@ describe('SQLGenerator', () => {
       const result = generator.generate(ast)
 
       expect(result.sql).toContain('FROM nodes')
-      expect(result.sql).toMatch(/WHERE.*labels.*Person/i)
+      // Labels are parameterized using json_each for security
+      expect(result.sql).toMatch(/WHERE.*json_each.*labels/i)
+      expect(result.params).toContain('Person')
     })
 
     it('should translate MATCH (n:Person:Employee) to AND conditions for multiple labels', () => {
@@ -137,8 +139,11 @@ describe('SQLGenerator', () => {
 
       const result = generator.generate(ast)
 
-      expect(result.sql).toContain('Person')
-      expect(result.sql).toContain('Employee')
+      // Labels are parameterized for security - check params instead of SQL
+      expect(result.params).toContain('Person')
+      expect(result.params).toContain('Employee')
+      // Should have multiple json_each checks joined with AND
+      expect(result.sql).toMatch(/json_each.*AND.*json_each/i)
     })
 
     it('should translate MATCH (n {name: "Alice"}) to property WHERE clause', () => {
@@ -712,8 +717,9 @@ describe('SQLGenerator', () => {
       const result = generator.generate(ast)
 
       expect(result.sql).toContain('JOIN')
-      expect(result.sql).toContain('Person')
-      expect(result.sql).toContain('Company')
+      // Labels are parameterized for security - check params instead of SQL
+      expect(result.params).toContain('Person')
+      expect(result.params).toContain('Company')
       // Relationship types are parameterized for SQL injection prevention
       expect(result.params).toContain('KNOWS')
       expect(result.params).toContain('WORKS_AT')
@@ -741,7 +747,7 @@ describe('SQLGenerator', () => {
         expect(result.sql).toMatch(/FROM nodes AS person/i)
       })
 
-      it('should generate correct label check using json_extract', () => {
+      it('should generate correct label check using json_each', () => {
         // MATCH (n:Person) RETURN n
         const ast = createQuery(
           createMatchClause(createPattern(createNodePattern('n', ['Person']))),
@@ -750,9 +756,10 @@ describe('SQLGenerator', () => {
 
         const result = generator.generate(ast)
 
-        // Should use json_extract to check labels array
-        expect(result.sql).toMatch(/json_extract\(n\.labels/i)
-        expect(result.sql).toContain('"Person"')
+        // Should use json_each for secure parameterized label checks
+        expect(result.sql).toMatch(/json_each\(n\.labels\)/i)
+        // Label should be in params, not in SQL
+        expect(result.params).toContain('Person')
       })
 
       it('should handle multiple labels with AND conditions', () => {
@@ -764,11 +771,11 @@ describe('SQLGenerator', () => {
 
         const result = generator.generate(ast)
 
-        // Both labels should be checked with AND
-        expect(result.sql).toMatch(/json_extract\(n\.labels.*Person/i)
-        expect(result.sql).toMatch(/json_extract\(n\.labels.*Employee/i)
-        // Should have two separate conditions connected with AND
-        expect(result.sql).toMatch(/LIKE.*AND.*LIKE/i)
+        // Both labels should be in params
+        expect(result.params).toContain('Person')
+        expect(result.params).toContain('Employee')
+        // Should have two separate EXISTS conditions connected with AND
+        expect(result.sql).toMatch(/EXISTS.*AND.*EXISTS/i)
       })
 
       it('should return all columns for node variable', () => {
@@ -856,8 +863,8 @@ describe('SQLGenerator', () => {
 
         const result = generator.generate(ast)
 
-        // Should have both label check AND property check
-        expect(result.sql).toMatch(/labels.*Person/i)
+        // Should have both label check (in params) AND property check
+        expect(result.params).toContain('Person')
         expect(result.sql).toMatch(/properties.*city/i)
         // Conditions should be combined with AND
         const whereMatch = result.sql.match(/WHERE\s+(.+)/is)
@@ -937,9 +944,9 @@ describe('SQLGenerator', () => {
         // Should have both table aliases
         expect(result.sql).toMatch(/nodes AS a/i)
         expect(result.sql).toMatch(/nodes AS b/i)
-        // Should check both labels
-        expect(result.sql).toContain('Person')
-        expect(result.sql).toContain('Company')
+        // Labels should be parameterized for security
+        expect(result.params).toContain('Person')
+        expect(result.params).toContain('Company')
       })
 
       it('should create proper cross join for unrelated node patterns', () => {
@@ -1018,9 +1025,9 @@ describe('SQLGenerator', () => {
 
         // Should generate unique aliases like t0, t1
         expect(result.sql).toMatch(/nodes AS t\d/i)
-        // Should have two different node tables
-        expect(result.sql).toContain('Person')
-        expect(result.sql).toContain('Company')
+        // Labels should be parameterized for security
+        expect(result.params).toContain('Person')
+        expect(result.params).toContain('Company')
       })
 
       it('should properly count results from multiple patterns', () => {
@@ -1080,7 +1087,8 @@ describe('SQLGenerator', () => {
 
         const result = generator.generate(ast)
 
-        expect(result.sql).toContain('My Label')
+        // Labels are parameterized for security
+        expect(result.params).toContain('My Label')
       })
 
       it('should handle empty labels array', () => {
@@ -1357,9 +1365,12 @@ describe('SQLGenerator', () => {
 
         const result = generator.generate(ast)
 
-        // Should filter both nodes by label
-        expect(result.sql).toMatch(/json_extract\(a\.labels.*Person/i)
-        expect(result.sql).toMatch(/json_extract\(b\.labels.*Company/i)
+        // Labels should be parameterized for security
+        expect(result.params).toContain('Person')
+        expect(result.params).toContain('Company')
+        // Should use json_each for label checks
+        expect(result.sql).toMatch(/json_each\(a\.labels\)/i)
+        expect(result.sql).toMatch(/json_each\(b\.labels\)/i)
       })
 
       it('should generate auto-alias when relationship variable not specified', () => {
@@ -1461,9 +1472,11 @@ describe('SQLGenerator', () => {
 
         const result = generator.generate(ast)
 
-        // Should filter both nodes as Person
-        expect(result.sql).toMatch(/json_extract\(p\.labels.*Person/i)
-        expect(result.sql).toMatch(/json_extract\(other\.labels.*Person/i)
+        // Labels should be parameterized for security
+        expect(result.params).toContain('Person')
+        // Should use json_each for label checks
+        expect(result.sql).toMatch(/json_each\(p\.labels\)/i)
+        expect(result.sql).toMatch(/json_each\(other\.labels\)/i)
         // Should handle bidirectional relationship (type is parameterized)
         expect(result.sql).toMatch(/\.type\s*=\s*\?/i)
         expect(result.params).toContain('FRIEND')

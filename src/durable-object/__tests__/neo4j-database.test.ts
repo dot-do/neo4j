@@ -10,13 +10,14 @@ import type { DurableObjectState } from '@cloudflare/workers-types'
 
 /**
  * Mock implementation of SqlStorage that behaves like Durable Object SQL API
+ * Supports parameterized queries with ? placeholders and ...bindings
  */
 class MockSqlStorage {
   private tables: Map<string, unknown[]> = new Map()
   private nextId: Map<string, number> = new Map()
   public executedStatements: string[] = []
 
-  exec(sql: string): SqlStorageCursor {
+  exec(sql: string, ...bindings: unknown[]): SqlStorageCursor {
     this.executedStatements.push(sql)
 
     // Handle CREATE TABLE statements
@@ -31,7 +32,7 @@ class MockSqlStorage {
       }
     }
 
-    // Handle INSERT with RETURNING
+    // Handle INSERT with RETURNING - supports parameterized queries
     if (sql.includes('INSERT INTO')) {
       const tableMatch = sql.match(/INSERT INTO (\w+)/)
       if (tableMatch) {
@@ -39,16 +40,28 @@ class MockSqlStorage {
         const id = this.nextId.get(tableName) || 1
         this.nextId.set(tableName, id + 1)
 
-        // Parse VALUES from SQL and store the row
-        const valuesMatch = sql.match(/VALUES\s*\(([^)]+)\)/i)
-        if (valuesMatch && tableName === 'nodes') {
-          // Extract labels and properties from SQL
-          const labelsMatch = sql.match(/'(\[.*?\])'/)
-          const propsMatch = sql.match(/'(\{.*?\})'/)
+        if (tableName === 'nodes') {
+          // For parameterized query: INSERT INTO nodes (labels, properties) VALUES (?, ?)
+          // bindings[0] = labels JSON, bindings[1] = properties JSON
+          let labels = '[]'
+          let properties = '{}'
+
+          if (bindings.length >= 2) {
+            // Parameterized query - get values from bindings
+            labels = String(bindings[0])
+            properties = String(bindings[1])
+          } else {
+            // Legacy interpolated query - parse from SQL string
+            const labelsMatch = sql.match(/'(\[.*?\])'/)
+            const propsMatch = sql.match(/'(\{.*?\})'/)
+            labels = labelsMatch ? labelsMatch[1] : '[]'
+            properties = propsMatch ? propsMatch[1] : '{}'
+          }
+
           const row = {
             id,
-            labels: labelsMatch ? labelsMatch[1] : '[]',
-            properties: propsMatch ? propsMatch[1] : '{}',
+            labels,
+            properties,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           }
@@ -57,15 +70,35 @@ class MockSqlStorage {
           }
           this.tables.get(tableName)!.push(row)
           return this.createCursor([row])
-        } else if (valuesMatch && tableName === 'relationships') {
-          // Parse relationship data - VALUES ('TYPE', startId, endId, 'props')
-          const parts = sql.match(/VALUES\s*\('([^']*)',\s*(\d+),\s*(\d+),\s*'([^']*)'\)/i)
+        } else if (tableName === 'relationships') {
+          // For parameterized query: INSERT INTO relationships (...) VALUES (?, ?, ?, ?)
+          // bindings[0] = type, bindings[1] = start_node_id, bindings[2] = end_node_id, bindings[3] = properties
+          let type = ''
+          let start_node_id = 1
+          let end_node_id = 2
+          let properties = '{}'
+
+          if (bindings.length >= 4) {
+            // Parameterized query - get values from bindings
+            type = String(bindings[0])
+            start_node_id = Number(bindings[1])
+            end_node_id = Number(bindings[2])
+            properties = String(bindings[3])
+          } else {
+            // Legacy interpolated query - parse from SQL string
+            const parts = sql.match(/VALUES\s*\('([^']*)',\s*(\d+),\s*(\d+),\s*'([^']*)'\)/i)
+            type = parts ? parts[1] : ''
+            start_node_id = parts ? parseInt(parts[2], 10) : 1
+            end_node_id = parts ? parseInt(parts[3], 10) : 2
+            properties = parts ? parts[4] : '{}'
+          }
+
           const row = {
             id,
-            type: parts ? parts[1] : '',
-            start_node_id: parts ? parseInt(parts[2], 10) : 1,
-            end_node_id: parts ? parseInt(parts[3], 10) : 2,
-            properties: parts ? parts[4] : '{}',
+            type,
+            start_node_id,
+            end_node_id,
+            properties,
             created_at: new Date().toISOString()
           }
           if (!this.tables.has(tableName)) {
@@ -81,54 +114,79 @@ class MockSqlStorage {
       }
     }
 
-    // Handle SELECT
+    // Handle SELECT with parameterized ID
     if (sql.includes('SELECT')) {
       const tableMatch = sql.match(/FROM (\w+)/)
       if (tableMatch) {
         const tableName = tableMatch[1]
         let rows = this.tables.get(tableName) || []
 
-        // Filter by ID if WHERE clause present
-        const idMatch = sql.match(/WHERE\s+id\s*=\s*(\d+)/i)
-        if (idMatch) {
-          const targetId = parseInt(idMatch[1], 10)
-          rows = rows.filter((r: any) => r.id === targetId)
+        // Filter by ID - check bindings first, then fallback to SQL parsing
+        if (sql.includes('WHERE id = ?') && bindings.length > 0) {
+          const targetId = Number(bindings[0])
+          rows = rows.filter((r: unknown) => (r as { id: number }).id === targetId)
+        } else {
+          const idMatch = sql.match(/WHERE\s+id\s*=\s*(\d+)/i)
+          if (idMatch) {
+            const targetId = parseInt(idMatch[1], 10)
+            rows = rows.filter((r: unknown) => (r as { id: number }).id === targetId)
+          }
         }
 
         return this.createCursor(rows)
       }
     }
 
-    // Handle UPDATE
+    // Handle UPDATE with parameterized queries
     if (sql.includes('UPDATE')) {
       const tableMatch = sql.match(/UPDATE (\w+)/)
       if (tableMatch) {
         const tableName = tableMatch[1]
-        const idMatch = sql.match(/WHERE\s+id\s*=\s*(\d+)/i)
-        const propsMatch = sql.match(/properties\s*=\s*'([^']+)'/i)
-        if (idMatch && propsMatch) {
-          const targetId = parseInt(idMatch[1], 10)
+        let targetId: number | null = null
+        let newProps: string | null = null
+
+        // For parameterized: UPDATE nodes SET properties = ?, ... WHERE id = ?
+        // bindings[0] = properties, bindings[1] = id
+        if (sql.includes('WHERE id = ?') && bindings.length >= 2) {
+          newProps = String(bindings[0])
+          targetId = Number(bindings[1])
+        } else {
+          const idMatch = sql.match(/WHERE\s+id\s*=\s*(\d+)/i)
+          const propsMatch = sql.match(/properties\s*=\s*'([^']+)'/i)
+          if (idMatch) targetId = parseInt(idMatch[1], 10)
+          if (propsMatch) newProps = propsMatch[1]
+        }
+
+        if (targetId !== null && newProps !== null) {
           const rows = this.tables.get(tableName) || []
-          const row = rows.find((r: any) => r.id === targetId)
+          const row = rows.find((r: unknown) => (r as { id: number }).id === targetId)
           if (row) {
-            (row as any).properties = propsMatch[1]
-            ;(row as any).updated_at = new Date().toISOString()
+            (row as { properties: string }).properties = newProps
+            ;(row as { updated_at: string }).updated_at = new Date().toISOString()
           }
         }
       }
       return this.createCursor([])
     }
 
-    // Handle DELETE
+    // Handle DELETE with parameterized ID
     if (sql.includes('DELETE FROM')) {
       const tableMatch = sql.match(/DELETE FROM (\w+)/)
       if (tableMatch) {
         const tableName = tableMatch[1]
-        const idMatch = sql.match(/WHERE\s+id\s*=\s*(\d+)/i)
-        if (idMatch) {
-          const targetId = parseInt(idMatch[1], 10)
+        let targetId: number | null = null
+
+        // For parameterized: DELETE FROM nodes WHERE id = ?
+        if (sql.includes('WHERE id = ?') && bindings.length > 0) {
+          targetId = Number(bindings[0])
+        } else {
+          const idMatch = sql.match(/WHERE\s+id\s*=\s*(\d+)/i)
+          if (idMatch) targetId = parseInt(idMatch[1], 10)
+        }
+
+        if (targetId !== null) {
           const rows = this.tables.get(tableName) || []
-          this.tables.set(tableName, rows.filter((r: any) => r.id !== targetId))
+          this.tables.set(tableName, rows.filter((r: unknown) => (r as { id: number }).id !== targetId))
         }
       }
       return this.createCursor([])
