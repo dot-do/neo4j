@@ -1,207 +1,340 @@
 # neo4j.do
 
-**The graph database reimagined for AI agents at the edge.**
+> Graph Databases. Edge-Native. Open by Default. AI-First.
 
-[![CI](https://github.com/dot-do/neo4j/actions/workflows/ci.yml/badge.svg)](https://github.com/dot-do/neo4j/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/neo4j.do)](https://www.npmjs.com/package/neo4j.do)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+Neo4j is powerful but painful. Driver boilerplate. Session management. Connection pools. Cypher syntax that only experts remember. All for a database that requires persistent connections to central servers.
 
----
+**neo4j.do** is the natural language graph database. Talk to your graph like a colleague. Get answers, not records.
 
-neo4j.do is an AI-native graph database built from the ground up to run on Cloudflare Workers. It brings Neo4j-compatible Cypher queries to the edge, enabling millions of AI agents to query interconnected data simultaneously with zero cold starts and global distribution.
+## AI-Native API
 
-## Why neo4j.do?
+```typescript
+import { neo4j } from 'neo4j.do'           // Full SDK
+import { neo4j } from 'neo4j.do/tiny'      // Minimal client
+import { neo4j } from 'neo4j.do/graph'     // Graph-only operations
+```
 
-Traditional graph databases weren't built for the AI era. They require persistent connections, central servers, and can't scale to handle millions of concurrent agent queries.
+Natural language for graph queries:
 
-**neo4j.do changes that:**
+```typescript
+import { neo4j } from 'neo4j.do'
 
-- **Edge-Native** — Runs on Cloudflare's global network. Sub-millisecond latency from anywhere.
-- **AI-First** — Designed for AI agents to query, traverse, and reason over graphs.
-- **Infinitely Scalable** — Durable Objects provide automatic sharding. No connection limits.
-- **Zero Cold Starts** — Always warm, always ready. Critical for real-time AI workflows.
-- **Neo4j Compatible** — Full Cypher query language. Drop-in driver replacement.
+// Talk to it like a colleague
+const collaborators = await neo4j`people who know people who work at Google`
+const path = await neo4j`shortest path from Alice to Bob`
+const influencers = await neo4j`most connected people in engineering`
 
-## Installation
+// Chain like sentences
+await neo4j`agents with reasoning capability`
+  .map(agent => neo4j`tasks assigned to ${agent}`)
+
+// Graphs that build themselves
+await neo4j`Ralph knows Tom, Tom knows Priya, Priya leads engineering`
+await neo4j`connect Sarah to the data science team`
+```
+
+## The Problem
+
+Neo4j dominates the graph database market:
+
+| What Neo4j Charges | The Reality |
+|--------------------|-------------|
+| **Aura Enterprise** | $50,000-500,000+/year |
+| **Connection Limits** | Per-connection pricing |
+| **Cluster Setup** | Complex, expensive |
+| **Cypher Learning Curve** | Weeks to become proficient |
+| **Driver Boilerplate** | Sessions, transactions, cleanup |
+| **Edge Deployment** | Not supported |
+
+### The Cypher Tax
+
+Every query requires ceremony:
+
+```typescript
+// This is what Neo4j makes you write
+const driver = neo4j.driver('neo4j://...', auth)
+const session = driver.session()
+try {
+  const result = await session.run(
+    'MATCH (p:Person)-[:KNOWS]->(friend) WHERE p.name = $name RETURN friend',
+    { name: 'Alice' }
+  )
+  // Process result.records...
+} finally {
+  await session.close()
+  await driver.close()
+}
+```
+
+Nobody can dictate that. It's not how humans think about graphs.
+
+## The Solution
+
+**neo4j.do** reimagines graph databases for AI:
+
+```
+Neo4j                              neo4j.do
+-----------------------------------------------------------------
+session.run() + Cypher             Natural language queries
+Connection pools                   Stateless HTTP
+Central servers                    Edge-native (300+ locations)
+$50K+/year                         Pay for what you use
+Driver boilerplate                 Tagged template literals
+Cypher expertise required          Say what you mean
+```
+
+## One-Click Deploy
 
 ```bash
-npm install neo4j.do
+npx create-dotdo neo4j
 ```
 
-## Quick Start
-
-### Using the Neo4j-Compatible Driver
+A graph database. Running at the edge. Global distribution from day one.
 
 ```typescript
-import neo4j from 'neo4j.do'
+import { Neo4j } from 'neo4j.do'
 
-const driver = neo4j.driver('neo4j://your-worker.workers.dev')
-const session = driver.session()
-
-// Create a knowledge graph for your AI agents
-await session.run(`
-  CREATE (agent:Agent {id: $agentId, capabilities: $capabilities})
-  CREATE (task:Task {id: $taskId, description: $description})
-  CREATE (agent)-[:ASSIGNED_TO]->(task)
-`, {
-  agentId: 'agent-001',
-  capabilities: ['reasoning', 'code-generation'],
-  taskId: 'task-42',
-  description: 'Analyze customer feedback patterns'
+export default Neo4j({
+  name: 'my-knowledge-graph',
+  domain: 'graph.mycompany.com',
 })
-
-// Query the graph
-const result = await session.run(`
-  MATCH (a:Agent)-[:ASSIGNED_TO]->(t:Task)
-  WHERE 'reasoning' IN a.capabilities
-  RETURN a.id AS agent, t.description AS task
-`)
-
-for (const record of result.records) {
-  console.log(`${record.get('agent')} → ${record.get('task')}`)
-}
-
-await session.close()
-await driver.close()
 ```
 
-### Using the HTTP Client
+## Features
+
+### Finding People & Relationships
 
 ```typescript
-import { Neo4jHttpClient } from 'neo4j.do/client'
+// Find anyone, any relationship
+const alice = await neo4j`Alice`
+const friends = await neo4j`Alice's friends`
+const fof = await neo4j`friends of Alice's friends`
 
-const client = new Neo4jHttpClient({
-  url: 'https://your-worker.workers.dev'
-})
-
-const result = await client.query(`
-  MATCH (n:Agent)-[r:KNOWS]->(m:Agent)
-  RETURN n, r, m LIMIT 100
-`)
+// AI infers what you need
+await neo4j`Alice`                    // returns person
+await neo4j`Alice's connections`      // returns relationships
+await neo4j`how Alice knows Bob`      // returns path
 ```
 
-## Use Cases
+### Creating Relationships
 
-### Agent Memory & Relationships
-Store and query complex relationships between agents, their knowledge, and interactions.
+```typescript
+// Relationships are one line
+await neo4j`Alice knows Bob`
+await neo4j`Bob works at Google`
+await neo4j`Alice and Bob collaborated on Project X`
 
-```cypher
-// Find all agents that have collaborated on similar tasks
-MATCH (a1:Agent)-[:COMPLETED]->(t1:Task)-[:SIMILAR_TO]->(t2:Task)<-[:COMPLETED]-(a2:Agent)
-WHERE a1 <> a2
-RETURN a1.id, a2.id, count(*) AS collaborations
-ORDER BY collaborations DESC
+// Bulk relationships just work
+await neo4j`
+  Alice knows Bob, Carol, Dave
+  Bob works at Google
+  Carol leads the engineering team
+  Dave reports to Carol
+`
+```
+
+### Agent Memory & Collaboration
+
+```typescript
+// Find collaborators naturally
+const collaborators = await neo4j`agents who worked on similar tasks`
+const pairs = await neo4j`agents who collaborated more than 3 times`
+const experts = await neo4j`agents with reasoning capability`
+
+// Build agent networks
+await neo4j`Ralph completed analysis task`
+  .then(() => neo4j`Tom reviewed Ralph's work`)
+  .then(() => neo4j`Priya approved the review`)
 ```
 
 ### Knowledge Graphs
-Build and traverse knowledge graphs that AI agents can reason over.
 
-```cypher
-// Traverse a knowledge graph to find relevant context
-MATCH path = (concept:Concept {name: 'machine-learning'})-[:RELATED_TO*1..3]->(related)
-RETURN path, length(path) AS depth
-ORDER BY depth
+```typescript
+// Traverse knowledge naturally
+const related = await neo4j`concepts related to machine learning`
+const deep = await neo4j`everything connected to AI within 3 hops`
+const context = await neo4j`relevant context for customer churn prediction`
+
+// Build knowledge as you go
+await neo4j`machine learning relates to neural networks`
+await neo4j`neural networks powers image recognition`
+await neo4j`image recognition used in self-driving cars`
 ```
 
 ### Workflow Orchestration
-Model complex multi-agent workflows as graphs.
 
-```cypher
-// Find next available task in a workflow
-MATCH (current:Task {status: 'completed'})-[:NEXT]->(next:Task {status: 'pending'})
-WHERE NOT (next)<-[:BLOCKED_BY]-(:Task {status: 'in_progress'})
-RETURN next
-LIMIT 1
+```typescript
+// Find ready work
+const next = await neo4j`next task not blocked by anything`
+const ready = await neo4j`tasks with all dependencies complete`
+const critical = await neo4j`blocked tasks with high priority dependents`
+
+// Chain workflows
+await neo4j`tasks assigned to Ralph`
+  .map(task => neo4j`dependencies of ${task}`)
+  .filter(dep => neo4j`${dep} status is pending`)
 ```
 
-## Cypher Support
+### Path Finding
 
-neo4j.do implements a comprehensive subset of the Cypher query language:
+```typescript
+// Shortest paths
+const path = await neo4j`shortest path from Alice to the CEO`
+const degrees = await neo4j`degrees of separation between Alice and Bob`
+const routes = await neo4j`all paths from start to end under 5 hops`
+
+// Influence paths
+const influence = await neo4j`how does Alice influence the engineering team?`
+```
+
+### Social Networks
+
+```typescript
+// Network analysis in plain English
+const influencers = await neo4j`most connected people`
+const bridges = await neo4j`people who connect different teams`
+const clusters = await neo4j`groups that work together`
+
+// Community detection
+await neo4j`find communities in the collaboration network`
+  .map(community => neo4j`key members of ${community}`)
+```
+
+### Recommendations
+
+```typescript
+// Recommendations from graph structure
+const suggestions = await neo4j`people Alice should know based on mutual friends`
+const content = await neo4j`articles similar to what Alice read`
+const tasks = await neo4j`tasks Ralph would be good at based on past work`
+```
+
+## Graph Algorithms
+
+```typescript
+// PageRank, centrality, community detection - all natural language
+const important = await neo4j`most important nodes by PageRank`
+const central = await neo4j`highest betweenness centrality in the network`
+const communities = await neo4j`detect communities using Louvain`
+
+// Ask questions about graph structure
+await neo4j`is the network connected?`
+await neo4j`find cycles in the dependency graph`
+await neo4j`diameter of the social network`
+```
+
+## Real-Time Subscriptions
+
+```typescript
+// Subscribe to graph changes
+await neo4j`watch Alice's connections`
+  .subscribe(change => console.log(`New connection: ${change}`))
+
+// Reactive graph updates
+await neo4j`notify me when anyone joins the engineering team`
+await neo4j`alert when dependency cycles are created`
+```
+
+## Cypher Compatibility
+
+For teams migrating from Neo4j, raw Cypher still works:
+
+```typescript
+// Same natural syntax, Cypher underneath when needed
+await neo4j`Alice friends`              // returns Person nodes
+await neo4j`Alice relationships`        // returns all relationships
+await neo4j`export Alice's network`     // returns graph bundle
+
+// Raw Cypher when you need it
+await neo4j.cypher`
+  MATCH (p:Person)-[:KNOWS*1..3]->(friend)
+  WHERE p.name = 'Alice'
+  RETURN friend
+`
+```
+
+### Cypher Clauses Supported
 
 | Clause | Status |
 |--------|--------|
-| `MATCH` | ✓ Pattern matching with nodes and relationships |
-| `OPTIONAL MATCH` | ✓ Left outer join semantics |
-| `CREATE` | ✓ Node and relationship creation |
-| `MERGE` | ✓ Upsert with `ON CREATE` / `ON MATCH` |
-| `DELETE` | ✓ Node and relationship deletion |
-| `SET` | ✓ Property updates |
-| `REMOVE` | ✓ Property and label removal |
-| `WHERE` | ✓ Filtering with expressions |
-| `RETURN` | ✓ Projection with aliases |
-| `WITH` | ✓ Query chaining and aggregation |
-| `UNWIND` | ✓ List expansion |
-| `UNION` | ✓ Query combination |
-| `CALL` | ✓ Procedure calls |
-
-### Expressions & Functions
-
-```cypher
-// Aggregations
-RETURN count(*), sum(n.value), avg(n.score), collect(n.name)
-
-// Comparisons
-WHERE n.age > 18 AND n.status IN ['active', 'pending']
-
-// Pattern expressions
-WHERE (n)-[:KNOWS]->(:Person {name: 'Alice'})
-```
+| `MATCH` | Fully supported with pattern matching |
+| `CREATE` | Node and relationship creation |
+| `MERGE` | Upsert with ON CREATE / ON MATCH |
+| `DELETE` | Node and relationship deletion |
+| `SET` | Property updates |
+| `WHERE` | Filtering with expressions |
+| `RETURN` | Projection with aliases |
+| `WITH` | Query chaining |
 
 ## Architecture
 
+### Edge-Native Design
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Cloudflare Workers Edge                     │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Worker     │  │   Worker     │  │   Worker     │   ...     │
-│  │  (Tokyo)     │  │  (London)    │  │  (NYC)       │           │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘           │
-│         │                  │                  │                 │
-│         ▼                  ▼                  ▼                 │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │              Durable Objects (Auto-Sharded)              │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐       │   │
-│  │  │ GraphDO     │  │ GraphDO     │  │ GraphDO     │  ...  │   │
-│  │  │ (SQLite)    │  │ (SQLite)    │  │ (SQLite)    │       │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘       │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+Graph Query Flow:
+
+Request --> Cloudflare Edge --> GraphDO --> SQLite
+                |                  |           |
+           Global CDN        Durable Object  Graph
+           (300+ PoPs)       (strong consistency) Storage
 ```
 
-- **Workers**: Handle HTTP requests globally with <1ms cold start
-- **Durable Objects**: Provide strong consistency and SQLite storage
-- **Cypher Engine**: Parses Cypher and generates optimized SQL
+### Durable Object per Graph
 
-## Deployment
-
-### 1. Create a Durable Object namespace
-
-```bash
-wrangler d1 create neo4j-do
+```
+GraphDO (graph metadata, config)
+  |
+  +-- NodesDO (node storage, properties)
+  |     |-- SQLite: Node records
+  |     +-- Indexes: Label, property
+  |
+  +-- EdgesDO (relationship storage)
+  |     |-- SQLite: Edge records
+  |     +-- Indexes: Type, direction
+  |
+  +-- AlgorithmsDO (computed graph metrics)
+        |-- PageRank cache
+        +-- Community detection results
 ```
 
-### 2. Configure `wrangler.jsonc`
+### Storage Tiers
 
-```jsonc
-{
-  "name": "my-graph-api",
-  "main": "src/index.ts",
-  "compatibility_date": "2024-12-30",
-  "compatibility_flags": ["nodejs_compat"],
-  "durable_objects": {
-    "bindings": [
-      { "name": "GRAPH", "class_name": "GraphDO" }
-    ]
-  }
-}
-```
+| Tier | Storage | Use Case | Query Speed |
+|------|---------|----------|-------------|
+| **Hot** | SQLite | Active nodes, recent edges | <5ms |
+| **Warm** | R2 + Index | Historical graph snapshots | <50ms |
+| **Cold** | R2 Archive | Time-travel, audit logs | <500ms |
 
-### 3. Deploy
+## vs Neo4j
 
-```bash
-npm run deploy
-```
+| Feature | Neo4j | neo4j.do |
+|---------|-------|----------|
+| **Pricing** | $50K-500K+/year | Pay per query |
+| **Deployment** | Central servers | 300+ edge locations |
+| **Cold Start** | Seconds | <1ms |
+| **API** | Driver + Cypher | Natural language |
+| **Connections** | Pool limits | Unlimited |
+| **Learning Curve** | Weeks | Minutes |
+| **Data Location** | Neo4j's cloud | Your Cloudflare account |
+| **Lock-in** | Proprietary | MIT licensed |
+
+## Use Cases
+
+### AI Agent Memory
+
+Agents remember relationships, context, and history in graph form. Query patterns of collaboration, find experts, trace decisions.
+
+### Knowledge Graphs
+
+Build knowledge that AI can reason over. Traverse concepts, find related ideas, discover connections humans miss.
+
+### Social Networks
+
+Friends of friends, influence paths, community detection, recommendations - all in plain English.
+
+### Dependency Graphs
+
+Track task dependencies, find bottlenecks, detect cycles, optimize workflows.
 
 ## Performance
 
@@ -209,31 +342,57 @@ npm run deploy
 |--------|-------|
 | Cold Start | <1ms |
 | P50 Query Latency | ~5ms |
-| Max Concurrent Connections | Unlimited* |
-| Geographic Distribution | 300+ edge locations |
-
-*Cloudflare Workers have no connection limits. Each request is independent.
+| P99 Query Latency | <20ms |
+| Concurrent Queries | Unlimited |
+| Edge Locations | 300+ |
 
 ## Roadmap
 
-- [ ] Full-text search with vector embeddings
-- [ ] Graph algorithms (PageRank, shortest path, community detection)
-- [ ] Real-time subscriptions via WebSockets
-- [ ] Multi-graph federation
-- [ ] Time-travel queries (point-in-time recovery)
+### Core Graph
+- [x] Node and relationship CRUD
+- [x] Property graphs
+- [x] Label-based queries
+- [x] Path finding
+- [ ] Full-text search
+- [ ] Vector embeddings
+
+### Algorithms
+- [x] Shortest path
+- [x] Degree centrality
+- [ ] PageRank
+- [ ] Community detection
+- [ ] Graph neural networks
+
+### Real-Time
+- [x] Graph subscriptions
+- [ ] WebSocket streaming
+- [ ] Change data capture
+- [ ] Federation across graphs
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+neo4j.do is open source under the MIT license.
+
+```bash
+git clone https://github.com/dotdo/neo4j.do
+cd neo4j.do
+pnpm install
+pnpm test
+```
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License - Graphs for everyone.
 
 ---
 
 <p align="center">
-  <a href="https://neo4j.do">neo4j.do</a> ·
-  <a href="https://github.com/dot-do/neo4j">GitHub</a> ·
-  <a href="https://www.npmjs.com/package/neo4j.do">npm</a>
+  <strong>Graph databases, reimagined.</strong>
+  <br />
+  Natural language. Edge-native. AI-first.
+  <br /><br />
+  <a href="https://neo4j.do">Website</a> |
+  <a href="https://docs.neo4j.do">Docs</a> |
+  <a href="https://discord.gg/dotdo">Discord</a> |
+  <a href="https://github.com/dotdo/neo4j.do">GitHub</a>
 </p>

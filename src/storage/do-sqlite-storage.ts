@@ -146,10 +146,27 @@ export class DOSqliteStorage implements IGraphStorage {
    * Convert a raw node row to a Node object
    */
   private rowToNode(row: NodeRow): Node {
+    let labels: string[]
+    let properties: Record<string, unknown>
+
+    try {
+      labels = JSON.parse(row.labels) as string[]
+    } catch (error) {
+      console.error(`Failed to parse labels for node ${row.id}:`, error)
+      labels = []
+    }
+
+    try {
+      properties = JSON.parse(row.properties) as Record<string, unknown>
+    } catch (error) {
+      console.error(`Failed to parse properties for node ${row.id}:`, error)
+      properties = {}
+    }
+
     return {
       id: row.id,
-      labels: JSON.parse(row.labels) as string[],
-      properties: JSON.parse(row.properties) as Record<string, unknown>,
+      labels,
+      properties,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }
@@ -159,12 +176,21 @@ export class DOSqliteStorage implements IGraphStorage {
    * Convert a raw relationship row to a Relationship object
    */
   private rowToRelationship(row: RelationshipRow): Relationship {
+    let properties: Record<string, unknown>
+
+    try {
+      properties = JSON.parse(row.properties) as Record<string, unknown>
+    } catch (error) {
+      console.error(`Failed to parse properties for relationship ${row.id}:`, error)
+      properties = {}
+    }
+
     return {
       id: row.id,
       type: row.type,
       startNodeId: row.start_node_id,
       endNodeId: row.end_node_id,
-      properties: JSON.parse(row.properties) as Record<string, unknown>,
+      properties,
       createdAt: row.created_at,
     }
   }

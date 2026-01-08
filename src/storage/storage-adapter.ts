@@ -152,10 +152,27 @@ const SCHEMA_SQL = `
  * Parse node row from database to Node object
  */
 function parseNodeRow(row: NodeRow): Node {
+  let labels: string[]
+  let properties: Record<string, unknown>
+
+  try {
+    labels = JSON.parse(row.labels)
+  } catch (error) {
+    console.error(`Failed to parse labels for node ${row.id}:`, error)
+    labels = []
+  }
+
+  try {
+    properties = JSON.parse(row.properties)
+  } catch (error) {
+    console.error(`Failed to parse properties for node ${row.id}:`, error)
+    properties = {}
+  }
+
   return {
     id: row.id,
-    labels: JSON.parse(row.labels),
-    properties: JSON.parse(row.properties),
+    labels,
+    properties,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -165,12 +182,21 @@ function parseNodeRow(row: NodeRow): Node {
  * Parse relationship row from database to Relationship object
  */
 function parseRelationshipRow(row: RelationshipRow): Relationship {
+  let properties: Record<string, unknown>
+
+  try {
+    properties = JSON.parse(row.properties)
+  } catch (error) {
+    console.error(`Failed to parse properties for relationship ${row.id}:`, error)
+    properties = {}
+  }
+
   return {
     id: row.id,
     type: row.type,
     startNodeId: row.start_node_id,
     endNodeId: row.end_node_id,
-    properties: JSON.parse(row.properties),
+    properties,
     createdAt: row.created_at,
   }
 }
